@@ -1,0 +1,12 @@
+
+[submodule "external/SIPPY"]
+	path = external/SIPPY
+	url = https://github.com/CPCLAB-UNIPI/SIPPY.git
+	ignore = dirty
+
+    
+[submodule "external/IterativeMatrixPencil"]
+	path = external/IterativeMatrixPencil
+	url = https://github.com/Weifarers/IMP.git
+	ignore = dirty
+
