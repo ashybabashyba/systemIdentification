@@ -4,245 +4,194 @@ import matplotlib.pyplot as plt
 
 try:
     from sippy_unipi import system_identification
+    from src.system_identification_wrapper import SystemIdentificationWrapper
 except ImportError:
     import os
     import sys
 
     sys.path.append(os.pardir)
+    sys.path.append(os.path.join(os.path.dirname(__file__), '../../', 'src'))
     from sippy_unipi import system_identification
+    from system_identification_wrapper import SystemIdentificationWrapper
 
 from sippy_unipi import functionset as fset
 from sippy_unipi import functionsetSIM as fsetSIM
 
 
-# %% Load Data
+# %% 
+# Ramp excitation system identification
 
-voltageInput = np.loadtxt("rampExcitation.exc", usecols=1)
-timeInput    = np.loadtxt("rampExcitation.exc", usecols=0)
+ramp_system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
+                                          timeOutput=np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0))
 
-plt.plot(timeInput, voltageInput, label='Input Current')
+ramp_system.addInputData(np.loadtxt("rampExcitation.exc", usecols=1))
+ramp_system.buildInterpolatedInputValues()
+
+plt.plot(ramp_system.timeInput, ramp_system.inputValues[0], label='Input Voltage')
 plt.xlabel('Time')
 plt.ylabel('Voltage')
 plt.grid()
+plt.legend()
+plt.show()
+
+for i in range(5):
+    data = np.loadtxt(f"currentOutput{i}.dat", skiprows=1, usecols=1)
+    ramp_system.addOutputData(data)
+
+
+ramp_sys_id = system_identification(ramp_system.outputValues, ramp_system.interpolatedInputValues, "N4SID", SS_fixed_order=10)
+xid_ramp, yid_ramp = fsetSIM.SS_lsim_process_form(ramp_sys_id.A, ramp_sys_id.B, 
+                                        ramp_sys_id.C, ramp_sys_id.D, 
+                                        ramp_system.interpolatedInputValues, ramp_sys_id.x0)
+
+fig, axs = plt.subplots(2, 3, figsize=(12, 8))
+axs = axs.flatten() 
+
+for i in range(ramp_system.outputValues.shape[0]):
+    axs[i].plot(ramp_system.timeOutput, ramp_system.outputValues[i, :], label='Original Output')
+    axs[i].plot(ramp_system.timeOutput, yid_ramp[i, :], '--', label='N4SID')
+    axs[i].set_xlabel("Time")
+    axs[i].set_ylabel("Current Output")
+    axs[i].set_title(f"Current Output {i} - SysID (Order 10)")
+    axs[i].grid()
+    axs[i].legend()
+
+if ramp_system.outputValues.shape[0] < 6:
+    axs[-1].axis('off')
+
+plt.tight_layout()
 plt.show()
 
 
-# %% Trying to reproduce the output using SIPPY
+# %% 
+# Ramp excitation, prediction using the half of the total time
 
-currentOutput = np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)
-timeOutput    = np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0)
+half_ramp_system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
+                                               timeOutput=np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0))
 
-# First interpolate
-newVoltageInput = np.interp(timeOutput, timeInput, voltageInput)
+half_ramp_system.addInputData(np.loadtxt("rampExcitation.exc", usecols=1))
+half_ramp_system.buildInterpolatedInputValues()
 
-U = newVoltageInput.reshape(1, -1)
-y = currentOutput.reshape(1, -1)
+for i in range(5):
+    data = np.loadtxt(f"currentOutput{i}.dat", skiprows=1, usecols=1)
+    half = len(data) // 2
+    data = data[:half]
+    half_ramp_system.addOutputData(data)
+
+halfTimeOutput = half_ramp_system.timeOutput[:len(half_ramp_system.timeOutput)//2]
+
+fig, axes = plt.subplots(2, 3, figsize=(12, 6))
+axes = axes.flatten()  
+
+for i in range(half_ramp_system.outputValues.shape[0]):  
+    axes[i].plot(halfTimeOutput, half_ramp_system.outputValues[i])
+    axes[i].set_xlabel("Time")
+    axes[i].set_ylabel("Current")
+    axes[i].set_title(f"Current Output {i} - Half Output Data")
+    axes[i].grid()
+
+for j in range(half_ramp_system.outputValues.shape[0], 6):
+    axes[j].axis('off')
+
+plt.tight_layout()
+plt.show()
 
 
-plt.plot(timeOutput, y[0])
-plt.ylabel("Current")
+half_ramp_sys_id = system_identification(half_ramp_system.outputValues, 
+                                         half_ramp_system.interpolatedInputValues, 
+                                         "N4SID", SS_fixed_order=10)
+xid_half_ramp, yid_half_ramp = fsetSIM.SS_lsim_process_form(half_ramp_sys_id.A, half_ramp_sys_id.B, 
+                                                            half_ramp_sys_id.C, half_ramp_sys_id.D, 
+                                                            half_ramp_system.interpolatedInputValues, 
+                                                            half_ramp_sys_id.x0)
+
+fig, axes = plt.subplots(2, 3, figsize=(12, 6))
+axes = axes.flatten()  
+
+for i in range(half_ramp_system.outputValues.shape[0]):
+    axes[i].plot(ramp_system.timeOutput, ramp_system.outputValues[i, :], label='Original Output')
+    axes[i].plot(half_ramp_system.timeOutput, yid_half_ramp[i, :], '--', label='N4SID')
+    axes[i].set_xlabel("Time")
+    axes[i].set_ylabel("Current")
+    axes[i].set_title(f"Current Output {i} - SysID (Order 10)")
+    axes[i].grid()
+    axes[i].legend()
+
+for j in range(half_ramp_system.outputValues.shape[0], 6):
+    axes[j].axis('off')
+
+plt.tight_layout()
+plt.show()
+# %% 
+# Gaussian excitation system identification
+
+gaussian_system = SystemIdentificationWrapper(timeInput=np.loadtxt("gaussianExcitation.exc", usecols=0),
+                                              timeOutput=np.loadtxt("gaussianOutput0.dat", skiprows=1, usecols=0))
+
+gaussian_system.addInputData(np.loadtxt("gaussianExcitation.exc", usecols=1))
+gaussian_system.buildInterpolatedInputValues()
+
+for i in range(5):
+    data = np.loadtxt(f"gaussianOutput{i}.dat", skiprows=1, usecols=1)
+    gaussian_system.addOutputData(data)
+
+plt.plot(gaussian_system.timeInput, gaussian_system.inputValues[0], label='Input Voltage')
+plt.xlabel('Time')
+plt.ylabel('Voltage')
 plt.grid()
-plt.xlabel("Time")
-plt.title("Current at the voltage source - System Identification (Order 10)")
-
-##System identification
-METHOD = ["N4SID", "CVA", "MOESP"]
-lege = ["Original Output"]
-for i in range(len(METHOD)):
-    method = METHOD[i]
-    sys_id = system_identification(y, U, method, SS_fixed_order=10)
-    xid, yid = fsetSIM.SS_lsim_process_form(
-        sys_id.A, sys_id.B, sys_id.C, sys_id.D, U, sys_id.x0
-    )
-    #
-    plt.plot(timeOutput, yid[0])
-    lege.append(method)
-plt.legend(lege)
+plt.legend()
 plt.show()
 
-# %%
+gaussian_sys_id = system_identification(gaussian_system.outputValues, 
+                                        gaussian_system.interpolatedInputValues, 
+                                        "N4SID", IC="AIC")
+xid_gaussian, yid_gaussian = fsetSIM.SS_lsim_process_form(gaussian_sys_id.A, gaussian_sys_id.B, 
+                                                          gaussian_sys_id.C, gaussian_sys_id.D, 
+                                                          gaussian_system.interpolatedInputValues, 
+                                                          gaussian_sys_id.x0)
 
-currentOutput = np.loadtxt("currentOutput1.dat", skiprows=1, usecols=1)
-timeOutput    = np.loadtxt("currentOutput1.dat", skiprows=1, usecols=0)
+fig, axes = plt.subplots(2, 3, figsize=(12, 6))
+axes = axes.flatten()  
 
-# First interpolate
-newVoltageInput = np.interp(timeOutput, timeInput, voltageInput)
+for i in range(gaussian_system.outputValues.shape[0]):
+    axes[i].plot(gaussian_system.timeOutput, gaussian_system.outputValues[i, :], label='Original Output')
+    axes[i].plot(gaussian_system.timeOutput, yid_gaussian[i, :], '--', label='N4SID')
+    axes[i].set_xlabel("Time")
+    axes[i].set_ylabel("Current")
+    axes[i].set_title(f"Current Output {i} - Information criteria AIC")
+    axes[i].grid()
+    axes[i].legend()
 
-U = newVoltageInput.reshape(1, -1)
-y = currentOutput.reshape(1, -1)
+for j in range(gaussian_system.outputValues.shape[0], 6):
+    axes[j].axis('off')
 
-
-plt.plot(timeOutput, y[0])
-plt.ylabel("Current")
-plt.grid()
-plt.xlabel("Time")
-plt.title("Current before lumped cell - System Identification (Order 10)")
-
-##System identification
-METHOD = ["N4SID"]
-lege = ["Original Output"]
-for i in range(len(METHOD)):
-    method = METHOD[i]
-    sys_id = system_identification(y, U, method, SS_fixed_order=10)
-    xid, yid = fsetSIM.SS_lsim_process_form(
-        sys_id.A, sys_id.B, sys_id.C, sys_id.D, U, sys_id.x0
-    )
-    #
-    plt.plot(timeOutput, yid[0])
-    lege.append(method)
-plt.legend(lege)
-plt.show()
-# %%
-
-currentOutput = np.loadtxt("currentOutput2.dat", skiprows=1, usecols=1)
-timeOutput    = np.loadtxt("currentOutput2.dat", skiprows=1, usecols=0)
-
-# First interpolate
-newVoltageInput = np.interp(timeOutput, timeInput, voltageInput)
-
-U = newVoltageInput.reshape(1, -1)
-y = currentOutput.reshape(1, -1)
-
-
-plt.plot(timeOutput, y[0])
-plt.ylabel("Current")
-plt.grid()
-plt.xlabel("Time")
-plt.title("Current at the start of the lumped cell - System Identification (Order 10)")
-
-##System identification
-METHOD = ["N4SID", "CVA", "MOESP"]
-lege = ["Original Output"]
-for i in range(len(METHOD)):
-    method = METHOD[i]
-    sys_id = system_identification(y, U, method, SS_fixed_order=10)
-    xid, yid = fsetSIM.SS_lsim_process_form(
-        sys_id.A, sys_id.B, sys_id.C, sys_id.D, U, sys_id.x0
-    )
-    #
-    plt.plot(timeOutput, yid[0])
-    lege.append(method)
-plt.legend(lege)
+plt.tight_layout()
 plt.show()
 
-# %%
+# %% 
+# Prediction of Gaussian excitation based on parameters from ramp to excitation
+# We only change the input values in this function respect to the ramp case
+xid_prediction, yid_prediction = fsetSIM.SS_lsim_process_form(ramp_sys_id.A, ramp_sys_id.B, 
+                                                             ramp_sys_id.C, ramp_sys_id.D, 
+                                                             gaussian_system.interpolatedInputValues, 
+                                                             ramp_sys_id.x0)
 
-currentOutput = np.loadtxt("currentOutput3.dat", skiprows=1, usecols=1)
-timeOutput    = np.loadtxt("currentOutput3.dat", skiprows=1, usecols=0)
+# We compare the results with the original outputs from the gaussian case
+fig, axes = plt.subplots(2, 3, figsize=(12, 6))
+axes = axes.flatten()  
 
-# First interpolate
-newVoltageInput = np.interp(timeOutput, timeInput, voltageInput)
+for i in range(gaussian_system.outputValues.shape[0]):
+    axes[i].plot(gaussian_system.timeOutput, gaussian_system.outputValues[i, :], label='Original Output')
+    axes[i].plot(gaussian_system.timeOutput, yid_prediction[i, :], '--', label='N4SID')
+    axes[i].set_xlabel("Time")
+    axes[i].set_ylabel("Current")
+    axes[i].set_title(f"Current Output {i} - Gaussian prediction")
+    axes[i].grid()
+    axes[i].legend()
 
-U = newVoltageInput.reshape(1, -1)
-y = currentOutput.reshape(1, -1)
+for j in range(gaussian_system.outputValues.shape[0], 6):
+    axes[j].axis('off')
 
-
-plt.plot(timeOutput, y[0])
-plt.ylabel("Current")
-plt.grid()
-plt.xlabel("Time")
-plt.title("Current at the end of the lumped cell - System Identification (Order 10)")
-
-##System identification
-METHOD = ["N4SID", "CVA", "MOESP"]
-lege = ["Original Output"]
-for i in range(len(METHOD)):
-    method = METHOD[i]
-    sys_id = system_identification(y, U, method, SS_fixed_order=10)
-    xid, yid = fsetSIM.SS_lsim_process_form(
-        sys_id.A, sys_id.B, sys_id.C, sys_id.D, U, sys_id.x0
-    )
-    #
-    plt.plot(timeOutput, yid[0])
-    lege.append(method)
-plt.legend(lege)
+plt.tight_layout()
 plt.show()
-
-# %%
-
-currentOutput = np.loadtxt("currentOutput4.dat", skiprows=1, usecols=1)
-timeOutput    = np.loadtxt("currentOutput4.dat", skiprows=1, usecols=0)
-
-# First interpolate
-newVoltageInput = np.interp(timeOutput, timeInput, voltageInput)
-
-U = newVoltageInput.reshape(1, -1)
-y = currentOutput.reshape(1, -1)
-
-
-plt.plot(timeOutput, y[0])
-plt.ylabel("Current")
-plt.grid()
-plt.xlabel("Time")
-plt.title("Current after lumped cell - System Identification (Order 10)")
-
-##System identification
-METHOD = ["N4SID"]
-lege = ["Original Output"]
-for i in range(len(METHOD)):
-    method = METHOD[i]
-    sys_id = system_identification(y, U, method, SS_fixed_order=10)
-    xid, yid = fsetSIM.SS_lsim_process_form(
-        sys_id.A, sys_id.B, sys_id.C, sys_id.D, U, sys_id.x0
-    )
-    #
-    plt.plot(timeOutput, yid[0])
-    lege.append(method)
-plt.legend(lege)
-plt.show()
-# %% Lets try SSSI with single input and multiple outputs
-
-currentOutput0 = np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)
-currentOutput1 = np.loadtxt("currentOutput1.dat", skiprows=1, usecols=1)
-currentOutput2 = np.loadtxt("currentOutput2.dat", skiprows=1, usecols=1)
-currentOutput3 = np.loadtxt("currentOutput3.dat", skiprows=1, usecols=1)
-currentOutput4 = np.loadtxt("currentOutput4.dat", skiprows=1, usecols=1)
-
-assert np.all(np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0) == np.loadtxt("currentOutput1.dat", skiprows=1, usecols=0))
-assert np.all(np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0) == np.loadtxt("currentOutput2.dat", skiprows=1, usecols=0))
-assert np.all(np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0) == np.loadtxt("currentOutput3.dat", skiprows=1, usecols=0))
-assert np.all(np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0) == np.loadtxt("currentOutput4.dat", skiprows=1, usecols=0))
-
-timeOutput    = np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0)
-
-newVoltageInput = np.interp(timeOutput, timeInput, voltageInput)
-
-U = newVoltageInput.reshape(1, -1)
-y = np.vstack((currentOutput0, currentOutput1, currentOutput2, currentOutput3, currentOutput4))
-
-
-for i in range(y.shape[0]):
-    METHOD = ["N4SID"]
-    lege = ["Original Output"]
-    
-    plt.plot(timeOutput, y[i, :])
-    plt.ylabel("Current Output {}".format(i))
-    plt.grid()
-    plt.xlabel("Time")
-    plt.title("Current Output {} - System Identification (Order 10)".format(i))
-
-    for i in range(len(METHOD)):
-        method = METHOD[i]
-        sys_id = system_identification(y, U, method, SS_fixed_order=10)
-        xid, yid = fsetSIM.SS_lsim_process_form(
-                sys_id.A, sys_id.B, sys_id.C, sys_id.D, U, sys_id.x0
-            )
-
-        plt.plot(timeOutput, yid[i, :])
-        lege.append(method)
-    plt.legend(lege)
-    plt.show()
-
-# assert np.all(yid[0,:] != yid[1, :])
-# assert np.all(yid[0,:] != yid[2, :])
-# assert np.all(yid[0,:] != yid[3, :])
-# assert np.all(yid[0,:] != yid[4, :])
-
-# assert np.all(yid[1, :] != yid[2, :])
-# assert np.all(yid[1, :] != yid[3, :])
-# assert np.all(yid[1, :] != yid[4, :])
-
-# assert np.all(yid[2, :] == yid[3, :])
-# assert np.all(yid[2, :] != yid[4, :])
-
 # %%
