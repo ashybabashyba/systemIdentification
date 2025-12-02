@@ -13,6 +13,7 @@ except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), '../../', 'src'))
     from sippy_unipi import system_identification
     from system_identification_wrapper import SystemIdentificationWrapper
+    from naishadhamSSSI import StateSpace
 
 from sippy_unipi import functionset as fset
 from sippy_unipi import functionsetSIM as fsetSIM
@@ -194,4 +195,94 @@ for j in range(gaussian_system.outputValues.shape[0], 6):
 
 plt.tight_layout()
 plt.show()
+# %% 
+# Ramp excitation, prediction using Data spaced every 10 points
+
+eq_ramp_system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
+                                               timeOutput=np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0)[::10])
+
+eq_ramp_system.addInputData(np.loadtxt("rampExcitation.exc", usecols=1))
+eq_ramp_system.buildInterpolatedInputValues()
+
+for i in range(5):
+    data = np.loadtxt(f"currentOutput{i}.dat", skiprows=1, usecols=1)
+    eq_ramp_system.addOutputData(data[::10])
+
+eqTimeOutput = eq_ramp_system.timeOutput
+
+fig, axes = plt.subplots(2, 3, figsize=(12, 6))
+axes = axes.flatten()  
+
+for i in range(eq_ramp_system.outputValues.shape[0]):  
+    axes[i].plot(eqTimeOutput, eq_ramp_system.outputValues[i])
+    axes[i].set_xlabel("Time")
+    axes[i].set_ylabel("Current")
+    axes[i].set_title(f"Current Output {i} - Data spaced every 10 points")
+    axes[i].grid()
+
+for j in range(eq_ramp_system.outputValues.shape[0], 6):
+    axes[j].axis('off')
+
+plt.tight_layout()
+plt.show()
+
+
+eq_ramp_sys_id = system_identification(eq_ramp_system.outputValues, 
+                                         eq_ramp_system.interpolatedInputValues, 
+                                         "N4SID", IC="AIC")
+xid_eq_ramp, yid_eq_ramp = fsetSIM.SS_lsim_process_form(eq_ramp_sys_id.A, eq_ramp_sys_id.B, 
+                                                            eq_ramp_sys_id.C, eq_ramp_sys_id.D, 
+                                                            eq_ramp_system.interpolatedInputValues, 
+                                                            eq_ramp_sys_id.x0)
+
+fig, axes = plt.subplots(2, 3, figsize=(12, 6))
+axes = axes.flatten()  
+
+for i in range(eq_ramp_system.outputValues.shape[0]):
+    axes[i].plot(ramp_system.timeOutput, ramp_system.outputValues[i, :], label='Original Output')
+    axes[i].plot(eq_ramp_system.timeOutput, yid_eq_ramp[i, :], '--', label='N4SID')
+    axes[i].set_xlabel("Time")
+    axes[i].set_ylabel("Current")
+    axes[i].set_title(f"currentOutput{i} - Information Criteria AIC")
+    axes[i].grid()
+    axes[i].legend()
+
+for j in range(eq_ramp_system.outputValues.shape[0], 6):
+    axes[j].axis('off')
+
+plt.tight_layout()
+plt.show()
+
+# %% State Space identification using Naishadham(2016) method
+
+system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
+                                     timeOutput=np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0)[::5])
+
+system.addInputData(np.loadtxt("rampExcitation.exc", usecols=1))
+system.buildInterpolatedInputValues()
+# Only works for one input and one output at the moment
+system.addOutputData(np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)[::5])
+
+# plt.plot(ramp_system.timeInput, ramp_system.inputValues[0], label='Input Voltage')
+# plt.xlabel('Time')
+# plt.ylabel('Voltage')
+# plt.grid()
+# plt.legend()
+# plt.show()
+
+stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                        systemOutput = system.outputValues[0])
+
+A, B, C, D = stateSpace.buildStateSpaceSystem()
+
+xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0])
+
+plt.plot(system.timeOutput, system.outputValues[0], label='Original Output')
+plt.plot(system.timeOutput, yid, '--', label='Naishadham method Output')
+plt.xlabel('Time')
+plt.ylabel('Current')
+plt.legend()
+plt.grid()
+plt.show()
+
 # %%

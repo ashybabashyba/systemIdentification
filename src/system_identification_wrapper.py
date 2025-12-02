@@ -1,18 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-try:
-    from sippy_unipi import system_identification
-except ImportError:
-    import os
-    import sys
-
-    sys.path.append(os.pardir)
-    from sippy_unipi import system_identification
-
-from sippy_unipi import functionset as fset
-from sippy_unipi import functionsetSIM as fsetSIM
-
 class SystemIdentificationWrapper:
     def __init__(self, timeInput, timeOutput):
         self.outputValues            = []
