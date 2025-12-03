@@ -2,9 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class StateSpace:
-    def __init__(self, systemInput, systemOutput):
+    def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-6):
         self.systemInput  = systemInput
         self.systemOutput = systemOutput
+
+        self.energyThreshold = energyThreshold
 
     def buildHankelMatrix(self):
         N = self.systemOutput.shape[0]
@@ -14,29 +16,44 @@ class StateSpace:
         col_idx = np.arange(L)[None, :]           
 
         idx = row_idx + col_idx                   
-        return self.systemOutput[idx]                             
+        return self.systemOutput[idx]        
+
+    def energyCriterionForTruncation(self, singularValues, order=2):
+        total_energy = np.sum(singularValues**order)
+        cumulative_energy = np.cumsum(singularValues**order) / total_energy
+        r = np.searchsorted(cumulative_energy, self.energyThreshold) + 1
+        return r                     
     
     def buildObservabilityAndStateMatrices(self):
         H = self.buildHankelMatrix()
 
         U, S, Vh = np.linalg.svd(H, full_matrices=False)
-        S_sqrt = np.diag(np.sqrt(S))
+        r = self.energyCriterionForTruncation(S)
 
-        observabilityMatrix = np.matmul(U, S_sqrt)
-        stateMatrix = np.matmul(S_sqrt, Vh)
+        Ur = U[:, :r]
+        Sr = S[:r]
+        Vhr = Vh[:r, :]
+
+        S_sqrt = np.diag(np.sqrt(Sr))
+
+        observabilityMatrix = np.matmul(Ur, S_sqrt)
+        stateMatrix = np.matmul(S_sqrt, Vhr)
 
         return observabilityMatrix, stateMatrix
     
     def buildStateSpaceSystem(self):
         omega_L, X_L = self.buildObservabilityAndStateMatrices()
 
-        omega1 = omega_L[:-1, :]   # Observability matrix without last row
-        omega2 = omega_L[1:, :]    # Observability matrix without first row
-        omegaMult = np.matmul(omega1.conj().T, omega2)
+        omega1 = omega_L[:-1, :]   # Observability matrix without last row L-rl
+        omega2 = omega_L[1:, :]    # Observability matrix without first row L-r1
 
-        # A = np.matmul(np.linalg.inv(np.matmul(omega1.conj().T, omega2)), np.matmul(omega1.conj().T, omega2))
-        A, _, _, _ = np.linalg.lstsq(omegaMult, omegaMult, rcond=None)
-        C = omega_L[0, :].T
+        # The paper has a typo error, see the reference 41
+        omega_LHS = np.matmul(omega1.conj().T, omega1)
+        omega_RHS = np.matmul(omega1.conj().T, omega2)
+
+        # A, _, _, _ = np.linalg.lstsq(omega_LHS, omega_RHS, rcond=None)
+        A, _, _, _ = np.linalg.lstsq(omega1, omega2, rcond=None)
+        C = omega_L[0, :]
 
         r = A.shape[0]
         N = self.systemInput.shape[0]
@@ -44,7 +61,7 @@ class StateSpace:
         Omega_rows = np.zeros((N, r))
         Ak = np.eye(r)
         for k in range(N):
-            Omega_rows[k, :] = np.matmul(C, Ak).reshape(r)
+            Omega_rows[k, :] = np.matmul(C, Ak)
             Ak = np.matmul(Ak, A)
 
         Womega = np.zeros((N, 1 + r))
@@ -61,11 +78,10 @@ class StateSpace:
         Y = self.systemOutput.reshape(N, )
         x1 = X_L[:, 0].reshape((r,))  # vector r
         RHS = Y - np.matmul(Omega_rows, x1)    # shape (N,)
-        WT_L = np.matmul(Womega.conj().T, Womega)
-        WT_R = np.matmul(Womega.conj().T, RHS)        
+        # WT_L = np.matmul(Womega.conj().T, Womega)
+        # WT_R = np.matmul(Womega.conj().T, RHS)        
 
-        # theta = np.matmul(np.linalg.inv(WT_L), WT_R)
-        theta, _, _, _ = np.linalg.lstsq(WT_L, WT_R, rcond=None) 
+        theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
         D = float(theta[0])
         B = theta[1:].reshape((r, 1))
 
