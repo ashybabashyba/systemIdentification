@@ -255,8 +255,8 @@ plt.show()
 
 # %% State Space identification using Naishadham(2016) method
 
-step = 0.01e-9
-newTimeVector = np.arange(0, 20e-9 + step, step)
+step = 0.1e-9
+newTimeVector = np.arange(0, 35e-9 + step, step)
 
 system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
                                      timeOutput=newTimeVector)
@@ -277,7 +277,7 @@ system.addOutputData(np.interp(newTimeVector,
 
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
                         systemOutput = system.outputValues[0],
-                        energyThreshold=1-1e-3)
+                        energyThreshold=1-1e-6)
 
 H = stateSpace.buildHankelMatrix()
 
@@ -285,15 +285,36 @@ H = stateSpace.buildHankelMatrix()
 for i in range(H.shape[1] - 1):
     assert np.allclose(H[:-1, i+1], H[1:, i]), "Hankel matrix construction error!"
 
-A, B, C, D = stateSpace.buildStateSpaceSystem()
+A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
-xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0])
+xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0], x0=initialState)
 
 plt.plot(system.timeOutput, system.outputValues[0], label='Original Output')
 plt.plot(system.timeOutput, yid, '--', label='Naishadham method Output')
 plt.xlabel('Time')
 plt.ylabel('Current')
 plt.ylim((-0.0002, 0.0012))
+plt.legend()
+plt.grid()
+plt.show()
+
+# %% Prediction with the previous parameters
+
+finalTime = np.arange(0, 150e-9 + step, step)
+finalOutput = np.interp(finalTime, 
+                   np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0), 
+                   np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)).reshape((1, -1))
+
+finalInput = np.interp(finalTime, 
+                   np.loadtxt("rampExcitation.exc", usecols=0), 
+                   np.loadtxt("rampExcitation.exc", usecols=1)).reshape((1, -1))
+
+x_id_predicted, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+
+plt.plot(finalTime, finalOutput[0], label='Original Output')
+plt.plot(finalTime, y_id_predicted, '--', label='Naishadham method Output')
+plt.xlabel('Time')
+plt.ylabel('Current')
 plt.legend()
 plt.grid()
 plt.show()
