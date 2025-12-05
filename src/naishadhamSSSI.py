@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.linalg import schur
 
 class StateSpace:
     def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-6):
@@ -53,7 +54,10 @@ class StateSpace:
 
         # A, _, _, _ = np.linalg.lstsq(omega_LHS, omega_RHS, rcond=None)
         A, _, _, _ = np.linalg.lstsq(omega1, omega2, rcond=None)
-        C = omega_L[0, :]
+        A = stabilize_matrix(A) 
+        # A = np.matmul( np.linalg.inv(omega_LHS), omega_RHS )
+        # C = omega_L[0, :]
+        C, _, _, _ = np.linalg.lstsq(A.T, omega_L[1, :].T, rcond=None)
 
         r = A.shape[0]
         N = self.systemInput.shape[0]
@@ -76,18 +80,19 @@ class StateSpace:
                 Womega[k, 1:] = np.matmul(past_w_reversed, Omegas)
 
         Y = self.systemOutput.reshape(N, )
-        x1 = X_L[:, 0].reshape((r,))  # vector r
-        RHS = Y - np.matmul(Omega_rows, x1)    # shape (N,)
-        # WT_L = np.matmul(Womega.conj().T, Womega)
-        # WT_R = np.matmul(Womega.conj().T, RHS)        
+        initialState = X_L[:, 0].reshape((r,))  # vector r
+        RHS = Y - np.matmul(Omega_rows, initialState)    # shape (N,)
+        WT_L = np.matmul(Womega.conj().T, Womega)
+        WT_R = np.matmul(Womega.conj().T, RHS)        
 
         theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
+        # theta = np.matmul( np.linalg.inv(WT_L), WT_R )
         D = float(theta[0])
         B = theta[1:].reshape((r, 1))
 
-        return A, B, C, D
+        return A, B, C, D, initialState
 
-    def evolveInput(self, A, B, C, D, u, x0=None):
+    def evolveInput(self, A, B, C, D, u, x0):
         u = np.asarray(u).reshape(-1)       
         n_steps = len(u)
         r = A.shape[0]                      
@@ -100,11 +105,7 @@ class StateSpace:
         x = np.zeros((n_steps, r, 1))
         y = np.zeros((n_steps, 1))
 
-        if x0 is None:
-            x[0] = np.zeros((r, 1))
-        else:
-            x[0] = np.asarray(x0).reshape(r, 1)
-
+        x[0] = np.asarray(x0).reshape(r, 1)
         y[0] = np.matmul(C, x[0]) + D * u[0]
 
         for k in range(1, n_steps):
@@ -112,3 +113,27 @@ class StateSpace:
             y[k] = np.matmul(C, x[k]) + D * u[k]
 
         return x, y
+    
+def stabilize_matrix(A, epsilon=1e-6):
+    T, Q = schur(A, output='real')
+    n = A.shape[0]
+    i = 0
+
+    while i < n:
+        if i == n - 1 or abs(T[i+1, i]) < 1e-12:
+            lam = T[i, i]
+            if abs(lam) >= 1:
+                T[i, i] = lam / (abs(lam) + epsilon)
+            i += 1
+        else:
+            T_block = T[i:i+2, i:i+2]
+            eigvals = np.linalg.eigvals(T_block)
+            r = max(abs(eigvals))
+
+            if r >= 1:
+                scale = (1 - epsilon) / r  
+                T[i:i+2, i:i+2] = scale * T_block
+            i += 2
+
+    A_stable = Q @ T @ Q.T
+    return A_stable
