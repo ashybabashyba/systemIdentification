@@ -13,7 +13,7 @@ except ImportError:
     sys.path.append(os.path.join(os.path.dirname(__file__), '../../', 'src'))
     from sippy_unipi import system_identification
     from system_identification_wrapper import SystemIdentificationWrapper
-    from naishadhamSSSI import StateSpace
+    from system_identification import StateSpace
 
 from sippy_unipi import functionset as fset
 from sippy_unipi import functionsetSIM as fsetSIM
@@ -253,10 +253,12 @@ for j in range(eq_ramp_system.outputValues.shape[0], 6):
 plt.tight_layout()
 plt.show()
 
-# %% State Space identification using Naishadham(2016) method
+# %% State Space identification using Naishadham(2016) and Juang(1997) method
 
 step = 0.1e-9
-newTimeVector = np.arange(0, 35e-9 + step, step)
+initialTrainingTime = 0
+finalTrainingTime = 10e-9
+newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
 
 system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
                                      timeOutput=newTimeVector)
@@ -268,16 +270,13 @@ system.addOutputData(np.interp(newTimeVector,
                                np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0), 
                                np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)))
 
-# plt.plot(ramp_system.timeInput, ramp_system.inputValues[0], label='Input Voltage')
-# plt.xlabel('Time')
-# plt.ylabel('Voltage')
-# plt.grid()
-# plt.legend()
-# plt.show()
+
 
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
-                        systemOutput = system.outputValues[0],
-                        energyThreshold=1-1e-6)
+                        systemOutput = system.outputValues,
+                        energyThreshold=1-1e-9)
+
+A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
 H = stateSpace.buildHankelMatrix()
 
@@ -285,22 +284,21 @@ H = stateSpace.buildHankelMatrix()
 for i in range(H.shape[1] - 1):
     assert np.allclose(H[:-1, i+1], H[1:, i]), "Hankel matrix construction error!"
 
-A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+## Plotting reconstructed training output ##
 
-xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0], x0=initialState)
+# xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0], x0=initialState)
+# plt.plot(system.timeOutput, system.outputValues[0], label='Original Output')
+# plt.plot(system.timeOutput, yid[0], '--', label='Naishadham method Output')
+# plt.xlabel('Time')
+# plt.ylabel('Current')
+# plt.ylim((-0.0002, 0.0012))
+# plt.legend()
+# plt.grid()
+# plt.show()
 
-plt.plot(system.timeOutput, system.outputValues[0], label='Original Output')
-plt.plot(system.timeOutput, yid, '--', label='Naishadham method Output')
-plt.xlabel('Time')
-plt.ylabel('Current')
-plt.ylim((-0.0002, 0.0012))
-plt.legend()
-plt.grid()
-plt.show()
+## Prediction ##
 
-# %% Prediction with the previous parameters
-
-finalTime = np.arange(0, 150e-9 + step, step)
+finalTime = np.arange(0, 50e-9 + step, step)
 finalOutput = np.interp(finalTime, 
                    np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0), 
                    np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)).reshape((1, -1))
@@ -312,11 +310,70 @@ finalInput = np.interp(finalTime,
 x_id_predicted, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
 
 plt.plot(finalTime, finalOutput[0], label='Original Output')
-plt.plot(finalTime, y_id_predicted, '--', label='Naishadham method Output')
+plt.plot(finalTime, y_id_predicted[0], '--', label='SSSI method Output')
+plt.axvspan(
+    initialTrainingTime,
+    finalTrainingTime,
+    alpha=0.2,
+    label='Training region'
+)
 plt.xlabel('Time')
 plt.ylabel('Current')
 plt.legend()
 plt.grid()
 plt.show()
 
+# %%
+step = 0.1e-9
+newTimeVector = np.arange(0, 35e-9 + step, step)
+
+systemMulti = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
+                                          timeOutput=newTimeVector)
+
+systemMulti.addInputData(np.loadtxt("rampExcitation.exc", usecols=1)[::-1])
+systemMulti.buildInterpolatedInputValues()
+
+systemMulti.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0), 
+                               np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)[::-1]))
+
+systemMulti.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt("currentOutput1.dat", skiprows=1, usecols=0), 
+                               np.loadtxt("currentOutput1.dat", skiprows=1, usecols=1)[::-1]))
+
+stateSpaceMulti = StateSpace(systemInput = systemMulti.interpolatedInputValues[0],
+                        systemOutput = systemMulti.outputValues,
+                        energyThreshold=1-1e-6)
+
+H = stateSpaceMulti.buildHankelMatrix()
+for i in range(H.shape[1] - 1):
+    assert np.allclose(H[:-stateSpaceMulti.numberOfOutputs, i+1], H[stateSpaceMulti.numberOfOutputs:, i]), "Hankel matrix construction error!"
+
+A, B, C, D, initialState = stateSpaceMulti.buildStateSpaceSystem()
+xid, yid = stateSpaceMulti.evolveInput(A=A, B=B, C=C, D=D, u=systemMulti.interpolatedInputValues[0], x0=initialState)
+
+# %%
+new_freqs = np.geomspace(1e6, 5e8, num=1000)
+
+I_predicted = y_id_predicted.squeeze()
+t_predicted = finalTime
+
+I = finalOutput[0]
+t = finalTime
+
+I_f_predicted = np.array([np.sum(I_predicted * np.exp(-1j * 2 * np.pi * f * t_predicted)) for f in new_freqs])
+I_f = np.array([np.sum(I * np.exp(-1j * 2 * np.pi * f * t)) for f in new_freqs])
+
+
+plt.figure()
+plt.plot(new_freqs, np.abs(I_f), '.', label='Original current in frequency domain using DTFT', color='red')
+plt.plot(new_freqs, np.abs(I_f_predicted), '.', label='Current from prediction in frequency domain using DTFT', color='blue')
+plt.xscale('log')
+plt.yscale('log')
+# plt.ylim((30, 10e2))
+plt.xlabel('Frequency [Hz]')
+plt.ylabel('Current [A]')
+plt.grid(which='both')
+plt.legend()
+plt.show()
 # %%
