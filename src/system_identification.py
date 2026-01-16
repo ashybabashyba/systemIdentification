@@ -68,14 +68,24 @@ class StateSpace:
         H_y = self.buildHankelMatrix()
         H_u = self.buildInputHankelMatrix()
 
+        U_u, S_u, Vt_u = np.linalg.svd(H_u, full_matrices=False)
+
+        nonzero_indices = S_u > 0
+
+        U1 = U_u[:, nonzero_indices]
+        S1 = S_u[nonzero_indices]
+        V1 = Vt_u[nonzero_indices, :]
+
+        H_u_reduced = U1 @ np.diag(S1) @ V1
+
         number_of_columns = H_u.shape[1]
 
         R_yy = np.matmul(H_y, H_y.T) / number_of_columns
-        R_yu = np.matmul(H_y, H_u.T) / number_of_columns
-        R_uu = np.matmul(H_u, H_u.T) / number_of_columns
-        R_uy = np.matmul(H_u, H_y.T) / number_of_columns
+        R_yu = np.matmul(H_y, H_u_reduced.T) / number_of_columns
+        R_uu = np.matmul(H_u_reduced, H_u_reduced.T) / number_of_columns
+        R_uy = np.matmul(H_u_reduced, H_y.T) / number_of_columns
 
-        R_hh = R_yy - np.matmul(np.matmul(R_yu, np.linalg.pinv(R_uu)), R_uy)
+        R_hh = R_yy - np.matmul(np.matmul(R_yu, np.linalg.pinv(R_uu, rcond=1e-24)), R_uy)
 
         return R_hh
     
@@ -95,9 +105,81 @@ class StateSpace:
 
         return observabilityMatrix
     
+    def buildObservabilityMatrix_orthogonalSpace(self):
+        Hu = self.buildInputHankelMatrix()
+        Hy = self.buildHankelMatrix()
+
+        Q, R = np.linalg.qr(Hu.T, mode='reduced')
+
+        diag_R = np.abs(np.diag(R))
+        r = np.sum(diag_R > 1e-12*diag_R[0])
+
+        Q1 = Q[:, r:]
+        Hy_perp = Hy @ Q1 @ Q1.T
+
+        U, S, Vh = np.linalg.svd(Hy_perp, full_matrices=False)
+        r2 = self.energyCriterionForTruncation(S)
+
+        Ur = U[:, :r2]
+
+        return Ur
+    
+    def buildObservabilityMatrix_CJRamos(self):
+        Hy = self.buildHankelMatrix()
+        Hu = self.buildInputHankelMatrix()
+
+        U_u, S_u, Vt_u = np.linalg.svd(Hu, full_matrices=False)
+        tol = 1e-12 * S_u[0]   
+        r = np.sum(S_u > tol)
+        # r = self.energyCriterionForTruncation(S_u)
+
+        orthogonal_operator = Vt_u[r:, :].T @ Vt_u[r:, :]
+        parallel_operator = Vt_u[:r, :].T @ Vt_u[:r, :]
+
+        Hy_orthogonal = Hy @ orthogonal_operator
+        U_orthogonal, S_orthogonal, Vh_orthogonal = np.linalg.svd(Hy_orthogonal, full_matrices=False)
+        tol_orthogonal = 1e-9 * S_orthogonal[0]   
+        r_orthogonal = np.sum(S_orthogonal > tol_orthogonal)
+        # r_orthogonal = self.energyCriterionForTruncation(S_orthogonal)
+        U_orthogonal_r = U_orthogonal[:, :r_orthogonal]
+
+
+
+        Hy_parallel = Hy @ parallel_operator
+        Hu_parallel = Hu @ parallel_operator
+
+        number_of_columns = Hu_parallel.shape[1]
+
+        R_yy = np.matmul(Hy_parallel, Hy_parallel.T) / number_of_columns
+        R_yu = np.matmul(Hy_parallel, Hu_parallel.T) / number_of_columns
+        R_uu = np.matmul(Hu_parallel, Hu_parallel.T) / number_of_columns
+        R_uy = np.matmul(Hu_parallel, Hy_parallel.T) / number_of_columns
+
+        R_hh = R_yy - np.matmul(np.matmul(R_yu, np.linalg.pinv(R_uu)), R_uy)
+
+        U_parallel, S_parallel, Vh_parallel = np.linalg.svd(R_hh, full_matrices=False)
+        tol_parallel = 1e-9 * S_parallel[0]   
+        r_parallel = np.sum(S_parallel > tol_parallel)
+        # r_parallel = self.energyCriterionForTruncation(S_parallel)
+        U_parallel_r = U_parallel[:, :r_parallel]
+
+
+
+        U_combined = np.hstack((U_parallel_r, U_orthogonal_r))
+
+        observabilityMatrix, S_final, _ = np.linalg.svd(U_combined, full_matrices=False)
+        # tol_final = 1e-9 * S_final[0]
+        # r_final = np.sum(S_final > tol_final)
+        # r_final = self.energyCriterionForTruncation(S_final)
+        # observabilityMatrix = observabilityMatrix[:, :r_final]
+
+        return observabilityMatrix
+    
     def buildStateSpaceSystem(self):
         # omega_L, X_L = self.buildObservabilityAndStateMatrices()  # For naishadham method
-        omega_L = self.buildObservabilityMatrix_juang()
+        # omega_L = self.buildObservabilityMatrix_juang()
+        # omega_L = self.buildObservabilityMatrix_orthogonalSpace()
+        omega_L = self.buildObservabilityMatrix_CJRamos()
 
         omega1 = omega_L[:-self.numberOfOutputs, :]   # Observability matrix without last row L-rl
         omega2 = omega_L[self.numberOfOutputs:, :]    # Observability matrix without first row L-r1
