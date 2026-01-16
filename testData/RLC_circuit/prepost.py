@@ -21,7 +21,7 @@ from sippy_unipi import functionsetSIM as fsetSIM
 # %%
 step = 0.01e-3
 initialTrainingTime = 0
-finalTrainingTime = 1.0e-3
+finalTrainingTime = 1.5e-3
 newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
 
 # trainingFile = "RLC_circuit_ramp.txt"
@@ -41,27 +41,27 @@ system.addOutputData(np.interp(newTimeVector,
 
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
                         systemOutput = system.outputValues,
-                        energyThreshold=1-1e-6)
+                        energyThreshold=1-1e-15)
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
 ## Plotting initial input and reconstructed training output ##
 
-# plt.plot(system.timeInput*1e3, system.inputValues[0], label='Input Voltage')
-# plt.xlabel('Time [ms]')
-# plt.ylabel('Voltage [V]')
-# plt.legend()
-# plt.grid()
-# plt.show()
+plt.plot(system.timeInput*1e3, system.inputValues[0], label='Input Voltage')
+plt.xlabel('Time [ms]')
+plt.ylabel('Voltage [V]')
+plt.legend()
+plt.grid()
+plt.show()
 
-# xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0], x0=initialState)
-# plt.plot(system.timeOutput*1e3, system.outputValues[0]*1e6, label='Original Output')
-# plt.plot(system.timeOutput*1e3, yid[0]*1e6, '--', label='Naishadham method Output')
-# plt.xlabel('Time [ms]')
-# plt.ylabel('Current [$\mu$A]')
-# plt.legend()
-# plt.grid()
-# plt.show()
+xid, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0], x0=initialState)
+plt.plot(system.timeOutput*1e3, system.outputValues[0]*1e6, label='Original Output')
+plt.plot(system.timeOutput*1e3, yid[0]*1e6, '--', label='Naishadham method Output')
+plt.xlabel('Time [ms]')
+plt.ylabel('Current [$\mu$A]')
+plt.legend()
+plt.grid()
+plt.show()
 # %%
 
 finalTime = np.arange(0, 5e-3 + step, step)

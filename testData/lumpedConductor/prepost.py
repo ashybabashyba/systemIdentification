@@ -257,7 +257,7 @@ plt.show()
 
 step = 0.1e-9
 initialTrainingTime = 0
-finalTrainingTime = 10e-9
+finalTrainingTime = 15e-9
 newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
 
 system = SystemIdentificationWrapper(timeInput=np.loadtxt("rampExcitation.exc", usecols=0),
@@ -274,7 +274,7 @@ system.addOutputData(np.interp(newTimeVector,
 
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
                         systemOutput = system.outputValues,
-                        energyThreshold=1-1e-9)
+                        energyThreshold=1-1e-12)
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
@@ -298,7 +298,7 @@ for i in range(H.shape[1] - 1):
 
 ## Prediction ##
 
-finalTime = np.arange(0, 50e-9 + step, step)
+finalTime = np.arange(0, 100e-9 + step, step)
 finalOutput = np.interp(finalTime, 
                    np.loadtxt("currentOutput0.dat", skiprows=1, usecols=0), 
                    np.loadtxt("currentOutput0.dat", skiprows=1, usecols=1)).reshape((1, -1))
