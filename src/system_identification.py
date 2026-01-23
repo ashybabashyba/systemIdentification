@@ -170,8 +170,8 @@ class StateSpace:
         observabilityMatrix, S_final, _ = np.linalg.svd(U_combined, full_matrices=False)
         # tol_final = 1e-9 * S_final[0]
         # r_final = np.sum(S_final > tol_final)
-        # r_final = self.energyCriterionForTruncation(S_final)
-        # observabilityMatrix = observabilityMatrix[:, :r_final]
+        r_final = self.energyCriterionForTruncation(S_final)
+        observabilityMatrix = observabilityMatrix[:, :r_final]
 
         return observabilityMatrix
     
@@ -185,7 +185,8 @@ class StateSpace:
         omega2 = omega_L[self.numberOfOutputs:, :]    # Observability matrix without first row L-r1
 
         A, _, _, _ = np.linalg.lstsq(omega1, omega2, rcond=None)
-        A = stabilize_matrix(A) 
+        # A = stabilize_matrix(A) 
+        A = stabilize_schur_smooth(A)
         C, _, _, _ = np.linalg.lstsq(A.T, omega_L[self.numberOfOutputs, :].T, rcond=None)
 
         r = A.shape[0]
@@ -244,7 +245,7 @@ class StateSpace:
 
         return x, y
     
-def stabilize_matrix(A, epsilon=1e-6):
+def stabilize_matrix(A, epsilon=1e-9):
     T, Q = schur(A, output='real')
     n = A.shape[0]
     i = 0
@@ -267,3 +268,24 @@ def stabilize_matrix(A, epsilon=1e-6):
 
     A_stable = Q @ T @ Q.T
     return A_stable
+
+def stabilize_schur_smooth(A, epsilon=1e-6):
+    T, Q = schur(A, output='real')
+    n = A.shape[0]
+    i = 0
+
+    while i < n:
+        if i == n - 1 or abs(T[i+1, i]) < 1e-12:
+            lam = T[i, i]
+            scale = (1 - epsilon) / max(1.0, abs(lam))
+            T[i, i] = scale * lam
+            i += 1
+        else:
+            T_block = T[i:i+2, i:i+2]
+            eigvals = np.linalg.eigvals(T_block)
+            r = max(abs(eigvals))
+            scale = (1 - epsilon) / max(1.0, r)
+            T[i:i+2, i:i+2] = scale * T_block
+            i += 2
+
+    return Q @ T @ Q.T
