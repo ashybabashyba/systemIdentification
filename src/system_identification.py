@@ -129,7 +129,7 @@ class StateSpace:
         Hu = self.buildInputHankelMatrix()
 
         U_u, S_u, Vt_u = np.linalg.svd(Hu, full_matrices=False)
-        tol = 1e-12 * S_u[0]   
+        tol = 1e-9 * S_u[0]   
         r = np.sum(S_u > tol)
         # r = self.energyCriterionForTruncation(S_u)
 
