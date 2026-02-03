@@ -174,4 +174,95 @@ plt.grid()
 plt.axvline(x=0, color='k', linestyle='--')
 plt.axhline(y=0, color='k', linestyle='--')
 plt.show()
+# %% Error vs energy percentages
+
+finalTrainingTimes = np.arange(5e-9, 20e-9, 0.5e-9)
+Error = []
+energyPercentages = []
+
+data = np.load("large_gaussian_data.npz")
+
+time_input = data["time_input"]
+input_signal = data["input_signal"]
+time_output_raw = data["time_output"]
+output_signal_raw = data["output_signal"]
+
+
+for finalTrainingTime in finalTrainingTimes:
+    step = 0.01e-9
+    initialTrainingTime = 0
+    newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+    system = SystemIdentificationWrapper(
+        timeInput=time_input,
+        timeOutput=newTimeVector
+    )
+
+    system.addInputData(input_signal)
+    system.buildInterpolatedInputValues()
+
+    system.addOutputData(
+        np.interp(newTimeVector, time_output_raw, output_signal_raw)
+    )
+    
+    stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                            systemOutput = system.outputValues,
+                            energyThreshold=1-1e-9)
+    
+    A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+    finalTime = np.arange(0, 45e-9 + step, step)
+    finalOutput = np.interp(
+        finalTime,
+        data["time_output"],
+        data["output_signal"]
+    ).reshape((1, -1))
+
+    finalInput = np.interp(
+        finalTime,
+        data["time_input"],
+        data["input_signal"]
+    ).reshape((1, -1))
+
+    x_id_predicted, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+
+
+    dt = step
+    N = finalOutput.shape[1]
+
+    window = np.hanning(N)
+
+    Y_true = np.fft.rfft(finalOutput[0] * window)
+    Y_pred = np.fft.rfft(y_id_predicted[0] * window)
+
+    Y_true_mag = np.abs(Y_true)
+    Y_pred_mag = np.abs(Y_pred)
+
+    error_freq = (
+        np.linalg.norm(Y_true_mag - Y_pred_mag) /
+        np.max((
+            np.linalg.norm(Y_true_mag),
+            np.linalg.norm(Y_pred_mag)
+        ))
+    )
+
+    Error.append(error_freq)
+
+
+
+    Y_train = np.fft.rfft(system.outputValues[0] * window[:len(system.outputValues[0])])
+
+    energy_training = np.sum(np.abs(Y_train)**2)
+    energy_total = np.sum(np.abs(Y_true)**2)
+
+    energyPercentage = energy_training / energy_total * 100
+    energyPercentages.append(energyPercentage)
+
+
+plt.plot(energyPercentages, Error, marker='o')
+plt.xlabel('Energy Percentage (Frequency Domain) [%]')
+plt.ylabel('Relative Spectral Error')
+plt.title('Spectral Error vs Energy Percentage')
+plt.grid()
+plt.show()
 # %%

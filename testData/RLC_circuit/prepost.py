@@ -103,6 +103,103 @@ axs[1].set_title('Zoom between 2ms and 5ms')
 plt.tight_layout()
 plt.show()
 
+# %% Error vs energy percentages
+
+# finalTrainingTimes = np.array([0.5e-3, 0.75e-3, 1.0e-3, 1.25e-3, 1.5e-3, 1.75e-3, 2.0e-3])
+finalTrainingTimes = np.arange(0.75e-3, 2.05e-3, 0.05e-3)
+Error = []
+energyPercentages = []
+
+trainingFile = "RLC_circuit_modulated_gaussian.txt"
+predictionFile = "RLC_circuit_modulated_gaussian_final.txt"
+
+for finalTrainingTime in finalTrainingTimes:
+    step = 0.01e-3
+    initialTrainingTime = 0
+    newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+    system = SystemIdentificationWrapper(
+        timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+        timeOutput=newTimeVector
+    )
+
+    system.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+    system.buildInterpolatedInputValues()
+
+    system.addOutputData(
+        np.interp(
+            newTimeVector,
+            np.loadtxt(trainingFile, skiprows=1, usecols=0),
+            np.loadtxt(trainingFile, skiprows=1, usecols=2)
+        )
+    )
+
+    stateSpace = StateSpace(
+        systemInput=system.interpolatedInputValues[0],
+        systemOutput=system.outputValues,
+        energyThreshold=1 - 1e-9
+    )
+
+    A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+    finalTime = np.arange(0, 5e-3 + step, step)
+
+    finalOutput = np.interp(
+        finalTime,
+        np.loadtxt(predictionFile, skiprows=1, usecols=0),
+        np.loadtxt(predictionFile, skiprows=1, usecols=1)
+    ).reshape((1, -1))
+
+    finalInput = np.interp(
+        finalTime,
+        np.loadtxt(trainingFile, skiprows=1, usecols=0),
+        np.loadtxt(trainingFile, skiprows=1, usecols=1)
+    ).reshape((1, -1))
+
+    x_id_predicted, y_id_predicted = stateSpace.evolveInput(
+        A=A, B=B, C=C, D=D,
+        u=finalInput[0],
+        x0=initialState
+    )
+
+    dt = step
+    N = finalOutput.shape[1]
+
+    window = np.hanning(N)
+
+    Y_true = np.fft.rfft(finalOutput[0] * window)
+    Y_pred = np.fft.rfft(y_id_predicted[0] * window)
+
+    Y_true_mag = np.abs(Y_true)
+    Y_pred_mag = np.abs(Y_pred)
+
+    error_freq = (
+        np.linalg.norm(Y_true_mag - Y_pred_mag) /
+        np.max((
+            np.linalg.norm(Y_true_mag),
+            np.linalg.norm(Y_pred_mag)
+        ))
+    )
+
+    Error.append(error_freq)
+
+    Y_train = np.fft.rfft(system.outputValues[0] * window[:len(system.outputValues[0])])
+
+    energy_training = np.sum(np.abs(Y_train)**2)
+    energy_total = np.sum(np.abs(Y_true)**2)
+
+    energyPercentage = energy_training / energy_total * 100
+    energyPercentages.append(energyPercentage)
+
+
+plt.plot(energyPercentages, Error, marker='o')
+plt.xlabel('Energy Percentage (Frequency Domain) [%]')
+plt.ylabel('Relative Spectral Error')
+plt.title('Spectral Error vs Energy Percentage')
+plt.grid()
+plt.show()
+
+
 
 # %% Defining a modulated gaussian pulse input
 
@@ -121,4 +218,3 @@ plt.show()
 
 # np.savetxt("RLC_circuit_modulated_gaussian_pulse_input.txt", np.column_stack((t, signal)))
 
-# %%
