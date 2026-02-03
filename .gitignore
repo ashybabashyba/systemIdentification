@@ -1,1 +1,10 @@
 */__pycache__/
+
+gaussianExcitationGHz_large_output.dat
+gaussianExcitationGHz_large.exc 
+gaussianExcitationGHz_output.dat
+gaussianExcitationGHz.exc 
+NodalSource_Input.exc 
+ProbeAtR_output.dat
+ModulatedGaussianExcitation.exc
+ModulatedGaussianExcitation_output.dat
