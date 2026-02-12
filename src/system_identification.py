@@ -10,7 +10,7 @@ class StateSpace:
         self.energyThreshold = energyThreshold
         self.numberOfOutputs = systemOutput.shape[0]
 
-    def buildHankelMatrix(self):
+    def buildOutputHankelMatrix(self):
         for i in range(self.numberOfOutputs - 1):
             if self.systemOutput[i].shape[0] != self.systemOutput[i + 1].shape[0]:
                 raise ValueError("All output signals must have the same length.")
@@ -18,7 +18,7 @@ class StateSpace:
         M, N = self.systemOutput.shape
         L = N // 2
 
-        num_rows = N - L + 1           # columnas de la hankel
+        num_rows = N - L + 1           
 
         H = np.zeros((num_rows, M * L))
 
@@ -48,7 +48,7 @@ class StateSpace:
         return r                     
     
     def buildObservabilityAndStateMatrices(self):
-        H = self.buildHankelMatrix()
+        H = self.buildOutputHankelMatrix()
 
         U, S, Vh = np.linalg.svd(H, full_matrices=False)
         r = self.energyCriterionForTruncation(S)
@@ -65,7 +65,7 @@ class StateSpace:
         return observabilityMatrix, stateMatrix
     
     def buildInputOutputCorrelationMatrix(self):
-        H_y = self.buildHankelMatrix()
+        H_y = self.buildOutputHankelMatrix()
         H_u = self.buildInputHankelMatrix()
 
         U_u, S_u, Vt_u = np.linalg.svd(H_u, full_matrices=False)
@@ -107,7 +107,7 @@ class StateSpace:
     
     def buildObservabilityMatrix_orthogonalSpace(self):
         Hu = self.buildInputHankelMatrix()
-        Hy = self.buildHankelMatrix()
+        Hy = self.buildOutputHankelMatrix()
 
         Q, R = np.linalg.qr(Hu.T, mode='reduced')
 
@@ -125,7 +125,7 @@ class StateSpace:
         return Ur
     
     def buildObservabilityMatrix_CJRamos(self):
-        Hy = self.buildHankelMatrix()
+        Hy = self.buildOutputHankelMatrix()
         Hu = self.buildInputHankelMatrix()
 
         U_u, S_u, Vt_u = np.linalg.svd(Hu, full_matrices=False)

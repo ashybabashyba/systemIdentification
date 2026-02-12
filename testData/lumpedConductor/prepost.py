@@ -278,7 +278,7 @@ stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
-H = stateSpace.buildHankelMatrix()
+H = stateSpace.buildOutputHankelMatrix()
 
 # Checking if the Hankel matrix is constructed properly
 for i in range(H.shape[1] - 1):
@@ -345,7 +345,7 @@ stateSpaceMulti = StateSpace(systemInput = systemMulti.interpolatedInputValues[0
                         systemOutput = systemMulti.outputValues,
                         energyThreshold=1-1e-6)
 
-H = stateSpaceMulti.buildHankelMatrix()
+H = stateSpaceMulti.buildOutputHankelMatrix()
 for i in range(H.shape[1] - 1):
     assert np.allclose(H[:-stateSpaceMulti.numberOfOutputs, i+1], H[stateSpaceMulti.numberOfOutputs:, i]), "Hankel matrix construction error!"
 
