@@ -1,12 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+import sys
 
 try:
     from src.system_identification_wrapper import SystemIdentificationWrapper
     from src.system_identification import StateSpace
 except ImportError:
-    import os
-    import sys
 
     sys.path.append(os.pardir)
     sys.path.append(os.path.join(os.path.dirname(__file__), '../../', 'src'))
@@ -69,3 +69,45 @@ def test_state_space_construction_and_dimensions():
     assert B.shape[0] == A.shape[0] and B.shape[1] == 1
     assert C.shape[1] == A.shape[0] and C.shape[0] == 1
     assert D.shape[0] == 1 and D.shape[1] == 1
+
+def test_RLC_circuit_training_output_reconstruction_and_prediction():
+    step = 0.01e-3
+    initialTrainingTime = 0
+    finalTrainingTime = 1.25e-3
+    newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+    trainingFile = "testData/RLC_circuit/RLC_circuit_modulated_gaussian.txt"
+
+    system = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                        timeOutput=newTimeVector)
+
+    system.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+    system.buildInterpolatedInputValues()
+    system.addOutputData(np.interp(newTimeVector, 
+                                np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                                np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+
+    stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                            systemOutput = system.outputValues,
+                            energyThreshold=1-1e-15)
+
+    A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+    _, yid = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=system.interpolatedInputValues[0], x0=initialState)
+
+    assert np.allclose(yid, system.outputValues[0], atol=1e-6)
+
+    predictionFile = "testData/RLC_circuit/RLC_circuit_modulated_gaussian_final.txt"
+
+    finalTime = np.arange(0, 5e-3 + step, step)
+    finalOutput = np.interp(finalTime, 
+                    np.loadtxt(predictionFile, skiprows=1, usecols=0), 
+                    np.loadtxt(predictionFile, skiprows=1, usecols=1)).reshape((1, -1))
+
+    finalInput = np.interp(finalTime, 
+                    np.loadtxt(trainingFile, usecols=0, skiprows=1), 
+                    np.loadtxt(trainingFile, usecols=1, skiprows=1)).reshape((1, -1))
+
+    _, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+
+    assert np.allclose(y_id_predicted, finalOutput[0], atol=1e-6)
