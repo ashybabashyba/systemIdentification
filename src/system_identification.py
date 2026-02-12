@@ -188,6 +188,7 @@ class StateSpace:
         # A = stabilize_matrix(A) 
         A = stabilize_schur_smooth(A)
         C, _, _, _ = np.linalg.lstsq(A.T, omega_L[self.numberOfOutputs, :].T, rcond=None)
+        C = np.asarray(C).reshape(self.numberOfOutputs, A.shape[0])
 
         r = A.shape[0]
         N = self.systemInput.shape[0]
