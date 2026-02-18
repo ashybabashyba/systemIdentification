@@ -62,6 +62,32 @@ plt.ylabel('Current [$\mu$A]')
 plt.legend()
 plt.grid()
 plt.show()
+
+## Plot for input-output data of the problem ## 
+inputPredictionSignal = np.interp(np.loadtxt(predictionFile, skiprows=1, usecols=0),
+                                  np.loadtxt(trainingFile, skiprows=1, usecols=0),
+                                  np.loadtxt(trainingFile, usecols=1, skiprows=1))
+fig, ax1 = plt.subplots()
+
+line1, = ax1.plot(np.loadtxt(predictionFile, skiprows=1, usecols=0)*1e3,
+                  inputPredictionSignal,
+                  label='Input: Voltage Source')
+ax1.set_xlabel('Time (ms)')
+ax1.set_ylabel('Voltage (V)')
+ax1.grid()
+
+ax2 = ax1.twinx()
+line2, = ax2.plot(np.loadtxt(predictionFile, skiprows=1, usecols=0)*1e3,
+                  np.loadtxt(predictionFile, skiprows=1, usecols=1)*1e6,
+                  '--r',
+                  label='Output: Current on Circuit',)
+ax2.set_ylabel('Current (µA)')
+ax2.grid()
+lines = [line1, line2]
+labels = [l.get_label() for l in lines]
+ax1.legend(lines, labels, loc='upper right')
+plt.savefig("RLC_data.png", dpi=300, bbox_inches='tight')
+plt.show()
 # %%
 
 finalTime = np.arange(0, 5e-3 + step, step)
