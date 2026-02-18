@@ -3,12 +3,17 @@ import matplotlib.pyplot as plt
 from scipy.linalg import schur
 
 class StateSpace:
-    def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-6):
+    def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-6, observabilityMethod='Projection'):
         self.systemInput  = systemInput
         self.systemOutput = systemOutput
 
         self.energyThreshold = energyThreshold
         self.numberOfOutputs = systemOutput.shape[0]
+
+        self.observabilityMethod = observabilityMethod
+
+        if self.observabilityMethod not in ['Naishadham', 'Juang', 'Projection']:
+            raise ValueError("Invalid observability method. Choose 'Naishadham', 'Juang', or 'Projection'.")
 
     def buildOutputHankelMatrix(self):
         for i in range(self.numberOfOutputs - 1):
@@ -178,8 +183,14 @@ class StateSpace:
     def buildStateSpaceSystem(self):
         # omega_L, X_L = self.buildObservabilityAndStateMatrices()  # For naishadham method
         # omega_L = self.buildObservabilityMatrix_juang()
-        # omega_L = self.buildObservabilityMatrix_orthogonalSpace()
-        omega_L = self.buildObservabilityMatrix_CJRamos()
+        # omega_L = self.buildObservabilityMatrix_CJRamos()
+
+        if self.observabilityMethod == 'Naishadham':
+            omega_L, X_L = self.buildObservabilityAndStateMatrices()
+        elif self.observabilityMethod == 'Juang':
+            omega_L = self.buildObservabilityMatrix_juang()
+        elif self.observabilityMethod == 'Projection':
+            omega_L = self.buildObservabilityMatrix_CJRamos()
 
         omega1 = omega_L[:-self.numberOfOutputs, :]   # Observability matrix without last row L-rl
         omega2 = omega_L[self.numberOfOutputs:, :]    # Observability matrix without first row L-r1
@@ -191,7 +202,7 @@ class StateSpace:
         C = np.asarray(C).reshape(self.numberOfOutputs, A.shape[0])
 
         r = A.shape[0]
-        N = self.systemInput.shape[0]
+        M, N = self.systemOutput.shape
 
         Omega_rows = np.zeros((self.numberOfOutputs*N, r))
         Ak = np.eye(r)
@@ -212,10 +223,13 @@ class StateSpace:
                 Omegas = Omega_rows[:self.numberOfOutputs*k, :]               
                 Womega[self.numberOfOutputs*k:self.numberOfOutputs*(k+1), self.numberOfOutputs:] = np.matmul(past_w_reversed, Omegas)
 
-        M, N = self.systemOutput.shape
         Y = self.systemOutput.T.reshape(M * N,)
-        initialState = np.zeros((r,))
-        # initialState = X_L[:, 0].reshape((r,))  # For naishadham method
+
+        if self.observabilityMethod == 'Naishadham':
+            initialState = X_L[:, 0].reshape((r,))  # For naishadham method
+        elif self.observabilityMethod in ['Juang', 'Projection']:
+            initialState = np.zeros((r,))
+
         RHS = Y - np.matmul(Omega_rows, initialState)    
 
         theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
