@@ -8,3 +8,5 @@ NodalSource_Input.exc
 ProbeAtR_output.dat
 ModulatedGaussianExcitation.exc
 ModulatedGaussianExcitation_output.dat
+
+*.png
