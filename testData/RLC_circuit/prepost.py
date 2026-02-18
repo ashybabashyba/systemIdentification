@@ -63,6 +63,7 @@ plt.legend()
 plt.grid()
 plt.show()
 
+# %%
 ## Plot for input-output data of the problem ## 
 inputPredictionSignal = np.interp(np.loadtxt(predictionFile, skiprows=1, usecols=0),
                                   np.loadtxt(trainingFile, skiprows=1, usecols=0),
@@ -244,3 +245,143 @@ plt.show()
 
 # np.savetxt("RLC_circuit_modulated_gaussian_pulse_input.txt", np.column_stack((t, signal)))
 
+# %% Generating comparison between methods
+
+## Loading training/prediction data and defining time vectors ##
+
+step = 0.01e-3
+initialTrainingTime = 0
+finalTrainingTime = 1.25e-3
+newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+initialTrainingTime_Naishadham = 1.8e-3
+finalTrainingTime_Naishadham = 3e-3
+newTimeVector_Naishadham = np.arange(initialTrainingTime_Naishadham, finalTrainingTime_Naishadham + step, step)
+
+
+trainingFile = "RLC_circuit_modulated_gaussian.txt"
+predictionFile = "RLC_circuit_modulated_gaussian_final.txt"
+
+
+## Defining system for Naishadham method ##
+
+system_Naishadham = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                     timeOutput=newTimeVector_Naishadham)
+
+system_Naishadham.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+system_Naishadham.buildInterpolatedInputValues()
+system_Naishadham.addOutputData(np.interp(newTimeVector_Naishadham, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+
+stateSpace_Naishadham = StateSpace(systemInput = system_Naishadham.interpolatedInputValues[0],
+                                   systemOutput = system_Naishadham.outputValues,
+                                   energyThreshold=1-1e-15,
+                                   observabilityMethod='Naishadham')
+
+A_Naishadham, B_Naishadham, C_Naishadham, D_Naishadham, initialState_Naishadham = stateSpace_Naishadham.buildStateSpaceSystem()
+
+
+## Defining system for Juang method ##
+
+system_Juang = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                        timeOutput=newTimeVector)
+
+system_Juang.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+system_Juang.buildInterpolatedInputValues()
+system_Juang.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+
+stateSpace_Juang = StateSpace(systemInput = system_Juang.interpolatedInputValues[0],
+                              systemOutput = system_Juang.outputValues,
+                              energyThreshold=1-1e-6,
+                              observabilityMethod='Juang')
+
+A_Juang, B_Juang, C_Juang, D_Juang, initialState_Juang = stateSpace_Juang.buildStateSpaceSystem()
+
+
+## Defining system for Projection method ##
+
+system_Projection = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                        timeOutput=newTimeVector)
+
+system_Projection.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+system_Projection.buildInterpolatedInputValues()
+system_Projection.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+
+stateSpace_Projection = StateSpace(systemInput = system_Projection.interpolatedInputValues[0],
+                              systemOutput = system_Projection.outputValues,
+                              energyThreshold=1-1e-6,
+                              observabilityMethod='Projection')
+
+A_Projection, B_Projection, C_Projection, D_Projection, initialState_Projection = stateSpace_Projection.buildStateSpaceSystem()
+
+
+## Evolving systems  ##
+
+finalTime = np.arange(0, 5e-3 + step, step)
+finalOutput = np.interp(finalTime, 
+                   np.loadtxt(predictionFile, skiprows=1, usecols=0), 
+                   np.loadtxt(predictionFile, skiprows=1, usecols=1)).reshape((1, -1))
+
+finalInput = np.interp(finalTime, 
+                   np.loadtxt(trainingFile, usecols=0, skiprows=1), 
+                   np.loadtxt(trainingFile, usecols=1, skiprows=1)).reshape((1, -1))
+
+_, y_id_predicted_Naishadham = stateSpace_Naishadham.evolveInput(A=A_Naishadham, B=B_Naishadham, C=C_Naishadham, D=D_Naishadham, u=finalInput[0], x0=initialState_Naishadham)
+_, y_id_predicted_Juang = stateSpace_Juang.evolveInput(A=A_Juang, B=B_Juang, C=C_Juang, D=D_Juang, u=finalInput[0], x0=initialState_Juang)
+_, y_id_predicted_Projection = stateSpace_Projection.evolveInput(A=A_Projection, B=B_Projection, C=C_Projection, D=D_Projection, u=finalInput[0], x0=initialState_Projection)
+
+
+## Plotting results ##
+
+fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+
+# Colores y marcadores consistentes
+colors = ['k', 'C0', 'C2', 'C3']
+markers = [None, 'o', 's', '^']
+labels = ['Original Output', 'Naishadham method Output', 
+          'Juang method Output', 'Projection method Output']
+
+# Subplot 0: µA
+axs[0].plot(finalTime*1e3, finalOutput[0]*1e6, color=colors[0], linewidth=3, label=labels[0])
+axs[0].plot(finalTime*1e3, y_id_predicted_Naishadham[0]*1e6, '--'+markers[1], 
+            color=colors[1], markersize=6, markevery=15, markerfacecolor='none', label=labels[1])
+axs[0].plot(finalTime*1e3, y_id_predicted_Juang[0]*1e6, '--'+markers[2], 
+            color=colors[2], markersize=6, markevery=15, markerfacecolor='none', label=labels[2])
+axs[0].plot(finalTime*1e3, y_id_predicted_Projection[0]*1e6, '--'+markers[3], 
+            color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
+
+axs[0].axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3,
+            label='Training region for Juang and Projection methods')
+axs[0].set_xlabel('Time (ms)')
+axs[0].set_ylabel('Current (µA)')
+axs[0].set_title('Output comparison')
+axs[0].grid()
+axs[0].legend()
+
+# Subplot 1: nA zoom
+axs[1].plot(finalTime*1e3, finalOutput[0]*1e9, color=colors[0], linewidth=2, label=labels[0])
+axs[1].plot(finalTime*1e3, y_id_predicted_Naishadham[0]*1e9, '--'+markers[1], 
+            color=colors[1], markersize=6, markevery=15, markerfacecolor='none', label=labels[1])
+axs[1].plot(finalTime*1e3, y_id_predicted_Juang[0]*1e9, '--'+markers[2], 
+            color=colors[2], markersize=6, markevery=15, markerfacecolor='none', label=labels[2])
+axs[1].plot(finalTime*1e3, y_id_predicted_Projection[0]*1e9, '--'+markers[3], 
+            color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
+
+axs[1].set_xlim(2, 3)
+axs[1].set_ylim(-50, 50)
+axs[1].set_xlabel('Time (ms)')
+axs[1].set_ylabel('Current (nA)')
+axs[1].set_title('Zoom between 2ms and 3ms')
+axs[1].grid()
+axs[1].legend()
+
+plt.tight_layout()
+plt.savefig("RLC_output_comparison.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+# %%
