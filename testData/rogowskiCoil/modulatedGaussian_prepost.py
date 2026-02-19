@@ -29,7 +29,7 @@ modulated_output_signal = modulated_data["output_signal"]
 
 new_step = 0.01e-9
 initialTrainingTime = 0
-finalTrainingTime = 30e-9
+finalTrainingTime = 35e-9
 new_time = np.arange(initialTrainingTime, finalTrainingTime + new_step, new_step)
 
 new_system = SystemIdentificationWrapper(
@@ -55,21 +55,23 @@ x_id_new, y_id_new = stateSpace_modulated.evolveInput(A=A_modulated, B=B_modulat
 
 ## Plotting initial input and reconstructed training output ##
 
-plt.plot(new_system.timeOutput, new_system.interpolatedInputValues[0], label='Input Current')
-plt.xlabel('Time')
-plt.ylabel('Current')
+plt.plot(new_system.timeOutput*1e9, new_system.interpolatedInputValues[0], label='Input: Current on Nodal Source')
+plt.xlabel('Time (ns)')
+plt.ylabel('Current (A)')
 # plt.xlim((0, 2e-10))
 plt.legend()
 plt.grid()
+plt.savefig("../../../../fig/Rogowski_modulated_input_data.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 
-plt.plot(new_system.timeOutput, new_system.outputValues[0], label='Original Output')
-plt.plot(new_system.timeOutput, y_id_new[0], '--', label='Output Reconstructed with SSSI')
-plt.xlabel('Time')
-plt.ylabel('Current')
+plt.plot(new_system.timeOutput*1e9, new_system.outputValues[0]*1e3, color='r', label='Output: Current on Coil')
+# plt.plot(new_system.timeOutput*1e9, y_id_new[0]*1e3, '--', label='Output Reconstructed with SSSI')
+plt.xlabel('Time (ns)')
+plt.ylabel('Current (mA)')
 plt.legend()
 plt.grid()
+plt.savefig("../../../../fig/Rogowski_modulated_output_data.png", dpi=300, bbox_inches='tight')
 plt.show()
 # %% Prediction with the previous parameters
 
@@ -135,4 +137,37 @@ plt.legend()
 plt.grid()
 plt.show()
 
+# %%
+
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
+
+fig, ax = plt.subplots()
+
+
+ax.plot(finalTime*1e9, finalOutput[0]*1e3,
+        label='FDTD simulation Output', linewidth=3, color='k')
+
+ax.plot(finalTime*1e9, y_id_predicted[0]*1e3,
+        '--', label='Projection method:\nreconstruction from\ndifferent Output', color='r')
+
+ax.set_xlabel('Time (ns)')
+ax.set_ylabel('Current (mA)')
+ax.legend(loc='upper left')
+ax.grid()
+
+
+axins = inset_axes(ax, width="45%", height="45%", loc='upper right')
+axins.plot(finalTime*1e9, finalOutput[0]*1e3, color='k', linewidth=3)
+axins.plot(finalTime*1e9, y_id_predicted[0]*1e3, '--^', color='r',
+              markersize=8, markevery=20, markerfacecolor='none')
+axins.set_xlim(32, 34)
+mask = (finalTime >= 32e-9) & (finalTime <= 34e-9)
+y_zoom = finalOutput[0][mask] * 1e3
+axins.set_ylim(min(y_zoom) - 0.5, max(y_zoom) + 0.5)
+axins.grid()
+
+mark_inset(ax, axins, loc1=2, loc2=4, fc="none", ec="0.5")
+
+plt.savefig("../../../../fig/Rogowski_modulated_output_reconstruction.png", dpi=300, bbox_inches='tight')
+plt.show()
 # %%
