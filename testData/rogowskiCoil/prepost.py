@@ -377,7 +377,7 @@ _, y_id_predicted_Projection = stateSpace_Projection.evolveInput(A=A_Projection,
 
 colors = ['k', 'C0', 'C2', 'C3']
 markers = [None, 'o', 's', '^']
-labels = ['Original Output', 
+labels = ['FDTD simulation Output', 
           'Naishadham method Output', 
           'Juang method Output', 
           'Projection method Output']
@@ -396,6 +396,12 @@ projection = y_id_predicted_Projection[0]*1e3
 axs[0].plot(time_ns, original, color=colors[0], linewidth=2, label=labels[0])
 axs[0].plot(time_ns, naishadham, color=colors[1], label=labels[1])
 axs[0].grid()
+axs[0].axvspan(
+    initialTrainingTime*1e9,
+    finalTrainingTime*1e9,
+    alpha=0.2,
+    label='Training region'
+)
 axs[0].legend()
 
 # -------------------------
@@ -404,6 +410,12 @@ axs[0].legend()
 axs[1].plot(time_ns, original, color=colors[0], linewidth=2, label=labels[0])
 axs[1].plot(time_ns, juang, color=colors[2], label=labels[2])
 axs[1].grid()
+axs[1].axvspan(
+    initialTrainingTime*1e9,
+    finalTrainingTime*1e9,
+    alpha=0.2,
+    label='Training region'
+)
 axs[1].legend()
 
 # -------------------------
@@ -412,6 +424,12 @@ axs[1].legend()
 axs[2].plot(time_ns, original, color=colors[0], linewidth=2, label=labels[0])
 axs[2].plot(time_ns, projection, color=colors[3], label=labels[3])
 axs[2].grid()
+axs[2].axvspan(
+    initialTrainingTime*1e9,
+    finalTrainingTime*1e9,
+    alpha=0.2,
+    label='Training region'
+)
 axs[2].legend()
 
 # Etiquetas globales
@@ -420,26 +438,29 @@ for ax in axs.flat:
     ax.set_ylabel("Current (mA)")
 
 plt.tight_layout()
-plt.savefig("Rogowski_output_comparison.png", dpi=300, bbox_inches='tight')
+plt.savefig("../../../../fig/Rogowski_output_comparison.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 
 # -------------------------
 # 4️⃣ Zoom comparison
 # -------------------------
-plt.plot(time_ns, original, color=colors[0], linewidth=2, label=labels[0])
+plt.plot(time_ns, original, color=colors[0], linewidth=3, label=labels[0])
+plt.plot(time_ns, naishadham, '--o', color=colors[1], 
+              markersize=8, markevery=23, markerfacecolor='none', 
+              label=labels[1])
 plt.plot(time_ns, juang, '--s', color=colors[2],
-              markersize=4, markevery=15, markerfacecolor='none',
+              markersize=8, markevery=25, markerfacecolor='none',
               label=labels[2])
 plt.plot(time_ns, projection, '--^', color=colors[3],
-              markersize=4, markevery=15, markerfacecolor='none',
+              markersize=8, markevery=27, markerfacecolor='none',
               label=labels[3])
 
 
-plt.xlim(30, 40)
-mask = (finalTime >= 30e-9) & (finalTime <= 40e-9)
+plt.xlim(32, 36)
+mask = (finalTime >= 32e-9) & (finalTime <= 36e-9)
 y_zoom = original[mask]
-plt.ylim(min(y_zoom), max(y_zoom))
+plt.ylim(min(y_zoom)-0.5, max(y_zoom)+0.5)
 
 plt.grid()
 plt.legend()
@@ -448,7 +469,7 @@ plt.ylabel('Current (mA)')
 
 
 plt.tight_layout()
-plt.savefig("Rogowski_output_comparison_zoom.png", dpi=300, bbox_inches='tight')
+plt.savefig("../../../../fig/Rogowski_output_comparison_zoom.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 # %%

@@ -51,6 +51,8 @@ A_modulated, B_modulated, C_modulated, D_modulated, initialState_modulated = sta
 
 x_id_new, y_id_new = stateSpace_modulated.evolveInput(A=A_modulated, B=B_modulated, C=C_modulated, D=D_modulated, u=new_system.interpolatedInputValues[0], x0=initialState_modulated)
 
+#%%
+
 ## Plotting initial input and reconstructed training output ##
 
 plt.plot(new_system.timeOutput, new_system.interpolatedInputValues[0], label='Input Current')

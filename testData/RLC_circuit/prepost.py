@@ -87,7 +87,7 @@ ax2.grid()
 lines = [line1, line2]
 labels = [l.get_label() for l in lines]
 ax1.legend(lines, labels, loc='upper right')
-plt.savefig("RLC_data.png", dpi=300, bbox_inches='tight')
+plt.savefig("../../../../fig/RLC_data.png", dpi=300, bbox_inches='tight')
 plt.show()
 # %%
 
@@ -360,6 +360,7 @@ axs[0].axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3,
 axs[0].set_xlabel('Time (ms)')
 axs[0].set_ylabel('Current (µA)')
 axs[0].set_title('Output comparison')
+axs[0].set_xlim(0, 3)
 axs[0].grid()
 axs[0].legend()
 
@@ -381,7 +382,7 @@ axs[1].grid()
 axs[1].legend()
 
 plt.tight_layout()
-plt.savefig("RLC_output_comparison.png", dpi=300, bbox_inches='tight')
+plt.savefig("../../../../fig/RLC_output_comparison.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 # %%
