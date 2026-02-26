@@ -49,6 +49,7 @@ stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
+#%%
 ## Plotting initial input and reconstructed training output ##
 
 plt.plot(system.timeOutput*1e9, system.interpolatedInputValues[0], label='Input: Current on Nodal Source')
@@ -57,7 +58,7 @@ plt.ylabel('Current (A)')
 # plt.xlim((0, 2e-9))
 plt.legend()
 plt.grid()
-plt.savefig("Rogowski_input_data.png", dpi=300, bbox_inches='tight')
+# plt.savefig("Rogowski_input_data.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 
@@ -69,9 +70,48 @@ plt.xlabel('Time (ns)')
 plt.ylabel('Current (mA)')
 plt.legend()
 plt.grid()
-plt.savefig("Rogowski_output_data.png", dpi=300, bbox_inches='tight')
+# plt.savefig("Rogowski_output_data.png", dpi=300, bbox_inches='tight')
 plt.show()
 
+#%%
+fig, ax1 = plt.subplots()
+
+t = system.timeOutput * 1e9
+y1 = system.interpolatedInputValues[0]        # A
+y2 = system.outputValues[0] * 1e3             # mA
+
+# --- INPUT ---
+line1, = ax1.plot(t, y1, label='Input: Current on Nodal Source')
+ax1.set_xlabel('Time (ns)')
+ax1.set_ylabel('Input Current (A)')
+ax1.grid()
+
+a1 = np.max(np.abs(y1))
+# ax1.set_ylim(-a1, a1)
+
+# --- OUTPUT ---
+ax2 = ax1.twinx()
+line2, = ax2.plot(t, y2, 'r--', label='Output: Current on Coil')
+ax2.set_ylabel('Output Current (mA)')
+
+a2 = np.max(np.abs(y2))
+# ax2.set_ylim(-a2, a2)
+
+# --- MISMAS DIVISIONES ---
+n_div = 5
+ticks_norm = np.linspace(-1, 1, n_div + 1)
+
+ax1.set_yticks(np.array([-0.50, -0.25, 0.0, 0.25, 0.50, 0.75, 1.0]))
+ax2.set_yticks(np.array([-8   , -4   , 0.0, 4,    8,    12,   16]))
+
+ax2.grid(False)
+
+# --- Leyenda ---
+lines = [line1, line2]
+labels = [l.get_label() for l in lines]
+ax1.legend(lines, labels, loc='upper right')
+
+plt.show()
 
 # %% Prediction with the previous parameters
 

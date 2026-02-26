@@ -75,6 +75,7 @@ line1, = ax1.plot(np.loadtxt(predictionFile, skiprows=1, usecols=0)*1e3,
                   label='Input: Voltage Source')
 ax1.set_xlabel('Time (ms)')
 ax1.set_ylabel('Voltage (V)')
+ax1.set_ylim(-1, 1)
 ax1.grid()
 
 ax2 = ax1.twinx()
@@ -87,7 +88,7 @@ ax2.grid()
 lines = [line1, line2]
 labels = [l.get_label() for l in lines]
 ax1.legend(lines, labels, loc='upper right')
-plt.savefig("../../../../fig/RLC_data.png", dpi=300, bbox_inches='tight')
+# plt.savefig("../../../../fig/RLC_data.png", dpi=300, bbox_inches='tight')
 plt.show()
 # %%
 
@@ -338,7 +339,7 @@ _, y_id_predicted_Projection = stateSpace_Projection.evolveInput(A=A_Projection,
 
 ## Plotting results ##
 
-fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+fig, axs = plt.subplots(1, 1, figsize=(10, 8))
 
 # Colores y marcadores consistentes
 colors = ['k', 'C0', 'C2', 'C3']
@@ -346,40 +347,44 @@ markers = [None, 'o', 's', '^']
 labels = ['Original Output', 'Naishadham method Output', 
           'Juang method Output', 'Projection method Output']
 
+fontsize_axes = 14     # números de los ejes
+fontsize_labels = 16   # xlabel / ylabel
+fontsize_legend = 14   # legend
+
 # Subplot 0: µA
-axs[0].plot(finalTime*1e3, finalOutput[0]*1e6, color=colors[0], linewidth=3, label=labels[0])
-axs[0].plot(finalTime*1e3, y_id_predicted_Naishadham[0]*1e6, '--'+markers[1], 
+axs.plot(finalTime*1e3, finalOutput[0]*1e6, color=colors[0], linewidth=3, label=labels[0])
+axs.plot(finalTime*1e3, y_id_predicted_Naishadham[0]*1e6, '--'+markers[1], 
             color=colors[1], markersize=6, markevery=15, markerfacecolor='none', label=labels[1])
-axs[0].plot(finalTime*1e3, y_id_predicted_Juang[0]*1e6, '--'+markers[2], 
+axs.plot(finalTime*1e3, y_id_predicted_Juang[0]*1e6, '--'+markers[2], 
             color=colors[2], markersize=6, markevery=15, markerfacecolor='none', label=labels[2])
-axs[0].plot(finalTime*1e3, y_id_predicted_Projection[0]*1e6, '--'+markers[3], 
+axs.plot(finalTime*1e3, y_id_predicted_Projection[0]*1e6, '--'+markers[3], 
             color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
 
-axs[0].axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3,
+axs.axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3,
             label='Training region for Juang and Projection methods')
-axs[0].set_xlabel('Time (ms)')
-axs[0].set_ylabel('Current (µA)')
-axs[0].set_title('Output comparison')
-axs[0].set_xlim(0, 3)
-axs[0].grid()
-axs[0].legend()
+axs.set_xlabel('Time (ms)', fontsize=fontsize_labels)
+axs.set_ylabel('Current (µA)', fontsize=fontsize_labels)
+axs.tick_params(axis='both', labelsize=fontsize_axes)
+# axs[0].set_xlim(0, 3)
+axs.grid()
+# axs[0].legend(fontsize=fontsize_legend)
+axs.legend(loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=2, fontsize=fontsize_legend)
 
-# Subplot 1: nA zoom
-axs[1].plot(finalTime*1e3, finalOutput[0]*1e9, color=colors[0], linewidth=2, label=labels[0])
-axs[1].plot(finalTime*1e3, y_id_predicted_Naishadham[0]*1e9, '--'+markers[1], 
-            color=colors[1], markersize=6, markevery=15, markerfacecolor='none', label=labels[1])
-axs[1].plot(finalTime*1e3, y_id_predicted_Juang[0]*1e9, '--'+markers[2], 
-            color=colors[2], markersize=6, markevery=15, markerfacecolor='none', label=labels[2])
-axs[1].plot(finalTime*1e3, y_id_predicted_Projection[0]*1e9, '--'+markers[3], 
-            color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
+# # Subplot 1: nA zoom
+# axs[1].plot(finalTime*1e3, finalOutput[0]*1e9, color=colors[0], linewidth=2, label=labels[0])
+# axs[1].plot(finalTime*1e3, y_id_predicted_Naishadham[0]*1e9, '--'+markers[1], 
+#             color=colors[1], markersize=6, markevery=15, markerfacecolor='none', label=labels[1])
+# axs[1].plot(finalTime*1e3, y_id_predicted_Juang[0]*1e9, '--'+markers[2], 
+#             color=colors[2], markersize=6, markevery=15, markerfacecolor='none', label=labels[2])
+# axs[1].plot(finalTime*1e3, y_id_predicted_Projection[0]*1e9, '--'+markers[3], 
+#             color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
 
-axs[1].set_xlim(2, 3)
-axs[1].set_ylim(-50, 50)
-axs[1].set_xlabel('Time (ms)')
-axs[1].set_ylabel('Current (nA)')
-axs[1].set_title('Zoom between 2ms and 3ms')
-axs[1].grid()
-axs[1].legend()
+# axs[1].set_xlim(2, 3)
+# axs[1].set_ylim(-50, 50)
+# axs[1].set_xlabel('Time (ms)', fontsize=fontsize_labels)
+# axs[1].set_ylabel('Current (nA)', fontsize=fontsize_labels)
+# axs[1].tick_params(axis='both', labelsize=fontsize_axes)
+# axs[1].grid()
 
 plt.tight_layout()
 plt.savefig("../../../../fig/RLC_output_comparison.png", dpi=300, bbox_inches='tight')
