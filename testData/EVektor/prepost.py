@@ -28,9 +28,9 @@ newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
 data = np.load("nodal_double_gaussian_board_top_MinorResistance.npz")
 
 time_input = data["time_input"]
-input_signal = data["input_signal"]
+input_signal = data["input_signal"] *218810/200
 time_output_raw = data["time_output"]
-output_signal_raw = data["output_signal"]
+output_signal_raw = data["output_signal"] *218810/200
 
 system = SystemIdentificationWrapper(
     timeInput=time_input,
@@ -96,16 +96,15 @@ finalInput = np.interp(
 
 x_id_predicted, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
 
-plt.plot(finalTime*1e6, finalOutput[0]*1e3, label='FDTD simulation Output', color='k', linewidth=3)
-plt.plot(finalTime*1e6, y_id_predicted[0]*1e3, '--', label='Projection method Output', color='r')
+plt.plot(finalTime*1e6, finalOutput[0], label='FDTD simulation', color='k', linewidth=3)
+plt.plot(finalTime*1e6, y_id_predicted[0], '--', label='Projection method [this work]', color='r')
 plt.axvspan(
     initialTrainingTime*1e6,
     finalTrainingTime*1e6,
-    alpha=0.2,
-    label='Training region'
+    alpha=0.2
 )
 plt.xlabel('Time ($\mu$s)')
-plt.ylabel('Current (mA)')
+plt.ylabel('Current (A)')
 plt.legend()
 plt.grid()
 # plt.savefig("../../../../fig/EVektor_output_comparison.png", dpi=300, bbox_inches='tight')
@@ -137,8 +136,8 @@ for k in range(num_segments):
         mask = (time >= sub_start) & (time <= sub_end)
 
         ax = axes[i]
-        ax.plot(time[mask]*1e6, y_true[mask]*1e3, label='FDTD simulation Output', color='k', linewidth=1.5)
-        ax.plot(time[mask]*1e6, y_pred[mask]*1e3, '--', label='Projection method Output', color='r')
+        ax.plot(time[mask]*1e6, y_true[mask], label='FDTD simulation', color='k', linewidth=1.5)
+        ax.plot(time[mask]*1e6, y_pred[mask], '--', label='Projection method [this work]', color='r')
 
         # ax.set_title(
         #     f'{sub_start*1e6:.2f} – {sub_end*1e6:.2f} µs',
@@ -147,7 +146,7 @@ for k in range(num_segments):
         ax.grid(True)
 
         ax.set_xlabel('Time ($\mu$s)')
-        ax.set_ylabel('Current (mA)')
+        ax.set_ylabel('Current (A)')
 
         if i == 0:
             ax.legend(fontsize=9)
@@ -159,6 +158,35 @@ for k in range(num_segments):
     # )
 
     plt.show()
+
+# %%
+
+subplots_ranges = [(2.5e-6, 5e-6), (42.5e-6, 45e-6)]
+
+time = finalTime
+y_true = finalOutput[0]
+y_pred = y_id_predicted[0]
+
+# Crear figura 2x1
+fig, axes = plt.subplots(2, 1, figsize=(7, 6), constrained_layout=True)
+axes = axes.flatten()
+
+for i, (sub_start, sub_end) in enumerate(subplots_ranges):
+    mask = (time >= sub_start) & (time <= sub_end)
+    ax = axes[i]
+
+    ax.plot(time[mask]*1e6, y_true[mask], label='FDTD simulation', color='k', linewidth=1.5)
+    ax.plot(time[mask]*1e6, y_pred[mask], '--', label='Projection method [this work]', color='r')
+
+    ax.set_xlabel('Time ($\mu$s)')
+    ax.set_ylabel('Current (A)')
+    ax.grid(True)
+
+    # Solo el primer subplot tiene leyenda
+    if i == 0:
+        ax.legend(fontsize=9)
+
+plt.show()
 # %% DTFT for impedance and cutoff frequency estimation
 
 new_freqs = np.geomspace(1e6, 5e8, num=1000)
@@ -187,8 +215,8 @@ I_f = np.array([np.sum(I * np.exp(-1j * 2 * np.pi * f * t)) for f in new_freqs])
 
 
 plt.figure()
-plt.plot(new_freqs, np.abs(I_f), '.', label='FDTD simulation Output in frequency domain', color='k', linewidth=2)
-plt.plot(new_freqs, np.abs(I_f_predicted), '.', label='Projection method Output in frequency domain', color='r', linewidth=0.5)
+plt.plot(new_freqs, np.abs(I_f), '.', label='FDTD simulation in frequency domain', color='k', linewidth=2)
+plt.plot(new_freqs, np.abs(I_f_predicted), '.', label='Projection method in frequency domain', color='r', linewidth=0.5)
 plt.xscale('log')
 plt.yscale('log')
 # plt.ylim((30, 10e2))

@@ -344,8 +344,8 @@ fig, axs = plt.subplots(1, 1, figsize=(10, 8))
 # Colores y marcadores consistentes
 colors = ['k', 'C0', 'C2', 'C3']
 markers = [None, 'o', 's', '^']
-labels = ['Original Output', 'Naishadham method Output', 
-          'Juang method Output', 'Projection method Output']
+labels = ['Original Output', 'Naishadham\'s method', 
+          'Juang\'s method', 'Projection method [this work]']
 
 fontsize_axes = 14     # números de los ejes
 fontsize_labels = 16   # xlabel / ylabel
@@ -360,8 +360,7 @@ axs.plot(finalTime*1e3, y_id_predicted_Juang[0]*1e6, '--'+markers[2],
 axs.plot(finalTime*1e3, y_id_predicted_Projection[0]*1e6, '--'+markers[3], 
             color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
 
-axs.axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3,
-            label='Training region for Juang and Projection methods')
+axs.axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3)
 axs.set_xlabel('Time (ms)', fontsize=fontsize_labels)
 axs.set_ylabel('Current (µA)', fontsize=fontsize_labels)
 axs.tick_params(axis='both', labelsize=fontsize_axes)

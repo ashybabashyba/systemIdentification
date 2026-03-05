@@ -55,7 +55,7 @@ x_id_new, y_id_new = stateSpace_modulated.evolveInput(A=A_modulated, B=B_modulat
 
 ## Plotting initial input and reconstructed training output ##
 
-plt.plot(new_system.timeOutput*1e9, new_system.interpolatedInputValues[0], label='Input: Current on Nodal Source')
+plt.plot(new_system.timeOutput*1e9, new_system.interpolatedInputValues[0], label='Input: Current on Sensed Wire')
 plt.xlabel('Time (ns)')
 plt.ylabel('Current (A)')
 # plt.xlim((0, 2e-10))
@@ -65,7 +65,7 @@ plt.grid()
 plt.show()
 
 
-plt.plot(new_system.timeOutput*1e9, new_system.outputValues[0]*1e3, color='r', label='Output: Current on Coil')
+plt.plot(new_system.timeOutput*1e9, new_system.outputValues[0]*1e3, color='r', label='Output: Induced Current on Coil')
 # plt.plot(new_system.timeOutput*1e9, y_id_new[0]*1e3, '--', label='Output Reconstructed with SSSI')
 plt.xlabel('Time (ns)')
 plt.ylabel('Current (mA)')
@@ -83,7 +83,7 @@ y1 = new_system.interpolatedInputValues[0]        # A
 y2 = new_system.outputValues[0] * 1e3             # mA
 
 # --- INPUT ---
-line1, = ax1.plot(t, y1, label='Input: Current on Nodal Source')
+line1, = ax1.plot(t, y1, label='Input: Current on Sensed Wire')
 ax1.set_xlabel('Time (ns)')
 ax1.set_ylabel('Input Current (A)')
 ax1.grid()
@@ -93,7 +93,7 @@ a1 = np.max(np.abs(y1))
 
 # --- OUTPUT ---
 ax2 = ax1.twinx()
-line2, = ax2.plot(t, y2, 'r--', label='Output: Current on Coil')
+line2, = ax2.plot(t, y2, 'r--', label='Output: Induced Current on Coil')
 ax2.set_ylabel('Output Current (mA)')
 
 a2 = np.max(np.abs(y2))
@@ -186,14 +186,14 @@ fig, ax = plt.subplots()
 
 
 ax.plot(finalTime*1e9, finalOutput[0]*1e3,
-        label='FDTD simulation Output', linewidth=3, color='k')
+        label='FDTD simulation', linewidth=3, color='k')
 
 ax.plot(finalTime*1e9, y_id_predicted[0]*1e3,
-        '--', label='Projection method Output', color='r')
+        '--', label='Projection method', color='r')
 
 ax.set_xlabel('Time (ns)')
 ax.set_ylabel('Current (mA)')
-ax.legend(loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=2)
+ax.legend(loc='upper left', bbox_to_anchor=(0.075, 0.9), ncol=1)
 ax.grid()
 
 

@@ -81,7 +81,7 @@ y1 = system.interpolatedInputValues[0]        # A
 y2 = system.outputValues[0] * 1e3             # mA
 
 # --- INPUT ---
-line1, = ax1.plot(t, y1, label='Input: Current on Nodal Source')
+line1, = ax1.plot(t, y1, label='Input: Current on Sensed Wire')
 ax1.set_xlabel('Time (ns)')
 ax1.set_ylabel('Input Current (A)')
 ax1.grid()
@@ -91,7 +91,7 @@ a1 = np.max(np.abs(y1))
 
 # --- OUTPUT ---
 ax2 = ax1.twinx()
-line2, = ax2.plot(t, y2, 'r--', label='Output: Current on Coil')
+line2, = ax2.plot(t, y2, 'r--', label='Output: Induced Current on Coil')
 ax2.set_ylabel('Output Current (mA)')
 
 a2 = np.max(np.abs(y2))
@@ -136,8 +136,7 @@ plt.plot(finalTime, y_id_predicted[0], '--', label='SSSI method Output')
 plt.axvspan(
     initialTrainingTime,
     finalTrainingTime,
-    alpha=0.2,
-    label='Training region'
+    alpha=0.2
 )
 plt.xlabel('Time')
 plt.ylabel('Current')
@@ -417,10 +416,10 @@ _, y_id_predicted_Projection = stateSpace_Projection.evolveInput(A=A_Projection,
 
 colors = ['k', 'C0', 'C2', 'C3']
 markers = [None, 'o', 's', '^']
-labels = ['FDTD simulation Output', 
-          'Naishadham method Output', 
-          'Juang method Output', 
-          'Projection method Output']
+labels = ['FDTD simulation', 
+          'Naishadham\'s method', 
+          'Juang\'s method', 
+          'Projection method [this work]']
 
 fig, axs = plt.subplots(3, 1, figsize=(6, 8))
 
@@ -439,8 +438,7 @@ axs[0].grid()
 axs[0].axvspan(
     initialTrainingTime*1e9,
     finalTrainingTime*1e9,
-    alpha=0.2,
-    label='Training region'
+    alpha=0.2
 )
 axs[0].legend()
 
@@ -453,8 +451,7 @@ axs[1].grid()
 axs[1].axvspan(
     initialTrainingTime*1e9,
     finalTrainingTime*1e9,
-    alpha=0.2,
-    label='Training region'
+    alpha=0.2
 )
 axs[1].legend()
 
@@ -467,8 +464,7 @@ axs[2].grid()
 axs[2].axvspan(
     initialTrainingTime*1e9,
     finalTrainingTime*1e9,
-    alpha=0.2,
-    label='Training region'
+    alpha=0.2
 )
 axs[2].legend()
 
