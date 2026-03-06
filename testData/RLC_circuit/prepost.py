@@ -386,7 +386,7 @@ axs.legend(loc='lower center', bbox_to_anchor=(0.5, 1.02), ncol=2, fontsize=font
 # axs[1].grid()
 
 plt.tight_layout()
-plt.savefig("../../../../fig/RLC_output_comparison.png", dpi=300, bbox_inches='tight')
+# plt.savefig("../../../../fig/RLC_output_comparison.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 # %%

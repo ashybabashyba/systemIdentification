@@ -474,7 +474,7 @@ for ax in axs.flat:
     ax.set_ylabel("Current (mA)")
 
 plt.tight_layout()
-plt.savefig("../../../../fig/Rogowski_output_comparison.png", dpi=300, bbox_inches='tight')
+# plt.savefig("../../../../fig/Rogowski_output_comparison.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 
@@ -505,7 +505,35 @@ plt.ylabel('Current (mA)')
 
 
 plt.tight_layout()
-plt.savefig("../../../../fig/Rogowski_output_comparison_zoom.png", dpi=300, bbox_inches='tight')
+# plt.savefig("../../../../fig/Rogowski_output_comparison_zoom.png", dpi=300, bbox_inches='tight')
 plt.show()
 
+# %%
+intervals = [(0, 10), (10, 20), (20, 30), (30, 45), (0, 45)]
+methods = {
+    "Naishadham": naishadham,
+    "Juang": juang,
+    "Projection": projection
+}
+
+def l2_normalized_error(y_true, y_pred):
+    """Calcula ||y_pred - y_true||_2 / ||y_true||_2"""
+    return np.linalg.norm(y_pred - y_true) / np.linalg.norm(y_true)
+
+# Diccionario para guardar los resultados
+errors = {method_name: [] for method_name in methods}
+
+for start, end in intervals:
+    # Crear máscara para el intervalo de tiempo
+    mask = (time_ns >= start) & (time_ns < end)
+    
+    for method_name, y_pred in methods.items():
+        err = l2_normalized_error(original[mask], y_pred[mask])
+        errors[method_name].append(err)
+
+# Mostrar resultados
+for method_name, errs in errors.items():
+    print(f"Errores L2 normalizados para {method_name}:")
+    for i, (start, end) in enumerate(intervals):
+        print(f"  Intervalo {start:.0f}-{end:.0f} ns: {errs[i]:.2e}")
 # %%
