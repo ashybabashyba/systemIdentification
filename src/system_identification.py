@@ -104,24 +104,34 @@ class StateSpace:
 
         return self.buildTruncatedSVD(U_combined)[0]
     
-    def buildStateSpaceSystem(self):
-
+    def buildObservability_and_InitialState(self):
         if self.observabilityMethod == 'Naishadham':
-            omega_L, X_L = self.buildObservability_Naishadham(self.buildOutputHankelMatrix())
+            observability, X_L = self.buildObservability_Naishadham(self.buildOutputHankelMatrix())
+            initialState = X_L[:, 0].reshape((observability.shape[1],))  
         elif self.observabilityMethod == 'Juang':
-            omega_L = self.buildObservability_Juang(self.buildInputHankelMatrix(), self.buildOutputHankelMatrix())
+            observability = self.buildObservability_Juang(self.buildInputHankelMatrix(), self.buildOutputHankelMatrix())
+            initialState = np.zeros((observability.shape[1],))
         elif self.observabilityMethod == 'Projection':
-            omega_L = self.buildObservability_Projection()
+            observability = self.buildObservability_Projection()
+            initialState = np.zeros((observability.shape[1],))
+        else:
+            raise ValueError("Invalid observability method. Choose 'Naishadham', 'Juang', or 'Projection'.")
 
-        omega1 = omega_L[:-self.numberOfOutputs, :]   # Observability matrix without last row L-rl
-        omega2 = omega_L[self.numberOfOutputs:, :]    # Observability matrix without first row L-r1
+        return observability, initialState
+    
+    def build_A_C_matrices(self, observabilityMatrix):
+        omega1 = observabilityMatrix[:-self.numberOfOutputs, :]
+        omega2 = observabilityMatrix[self.numberOfOutputs:, :]
 
         A, _, _, _ = np.linalg.lstsq(omega1, omega2, rcond=None)
-        # A = stabilize_matrix(A) 
         A = stabilize_schur_smooth(A)
-        C, _, _, _ = np.linalg.lstsq(A.T, omega_L[self.numberOfOutputs, :].T, rcond=None)
+
+        C, _, _, _ = np.linalg.lstsq(A.T, observabilityMatrix[self.numberOfOutputs, :].T, rcond=None)
         C = np.asarray(C).reshape(self.numberOfOutputs, A.shape[0])
 
+        return A, C
+    
+    def buildWeightedObserability(self, A, C):
         r = A.shape[0]
         M, N = self.systemOutput.shape
 
@@ -144,20 +154,28 @@ class StateSpace:
                 Omegas = Omega_rows[:self.numberOfOutputs*k, :]               
                 Womega[self.numberOfOutputs*k:self.numberOfOutputs*(k+1), self.numberOfOutputs:] = np.matmul(past_w_reversed, Omegas)
 
+        return Omega_rows, Womega
+    
+    def build_B_D_matrices(self, A, C, initialState):
+        Omega_rows, Womega = self.buildWeightedObserability(A, C)
+        M, N = self.systemOutput.shape
         Y = self.systemOutput.T.reshape(M * N,)
-
-        if self.observabilityMethod == 'Naishadham':
-            initialState = X_L[:, 0].reshape((r,))  # For naishadham method
-        elif self.observabilityMethod in ['Juang', 'Projection']:
-            initialState = np.zeros((r,))
 
         RHS = Y - np.matmul(Omega_rows, initialState)    
 
         theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
         D = theta[:self.numberOfOutputs].reshape((self.numberOfOutputs, 1))
-        B = theta[self.numberOfOutputs:].reshape((r, 1))
+        B = theta[self.numberOfOutputs:].reshape((A.shape[0], 1))
+
+        return B, D
+    
+    def buildStateSpaceSystem(self):
+        observabilityMatrix, initialState = self.buildObservability_and_InitialState()
+        A, C = self.build_A_C_matrices(observabilityMatrix)
+        B, D = self.build_B_D_matrices(A, C, initialState)
 
         return A, B, C, D, initialState
+    
 
     def evolveInput(self, A, B, C, D, u, x0):
         u = np.asarray(u).reshape(-1)       
