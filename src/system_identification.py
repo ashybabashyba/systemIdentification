@@ -8,6 +8,7 @@ class StateSpace:
         self.systemOutput = systemOutput
 
         self.energyThreshold = energyThreshold
+        self.truncationThreshold = 1e-9
         self.numberOfOutputs = systemOutput.shape[0]
 
         self.observabilityMethod = observabilityMethod
@@ -15,53 +16,39 @@ class StateSpace:
         if self.observabilityMethod not in ['Naishadham', 'Juang', 'Projection']:
             raise ValueError("Invalid observability method. Choose 'Naishadham', 'Juang', or 'Projection'.")
 
-    def buildOutputHankelMatrix(self):
-        for i in range(self.numberOfOutputs - 1):
-            if self.systemOutput[i].shape[0] != self.systemOutput[i + 1].shape[0]:
-                raise ValueError("All output signals must have the same length.")
-            
-        M, N = self.systemOutput.shape
+    def buildHankelMatrix(self, data):
+        if data.ndim == 1:
+            data = data.reshape(1, data.shape[0])
+        
+        M, N = data.shape
         L = N // 2
 
-        num_rows = N - L + 1           
-
+        num_rows = N - L + 1
         H = np.zeros((num_rows, M * L))
 
         for k in range(num_rows):
-            block = self.systemOutput[:, k:k+L]        
-            H[k, :] = block.flatten(order='F')  
-
+            block = data[:, k:k+L]
+            H[k, :] = block.flatten(order='F')
         return H.T
+
+    def buildOutputHankelMatrix(self):
+        lengths = [y.shape[0] for y in self.systemOutput]
+        if len(set(lengths)) != 1:
+            raise ValueError("All output signals must have the same length.")
+
+        return self.buildHankelMatrix(self.systemOutput)
     
     def buildInputHankelMatrix(self):
-        N = self.systemInput.shape[0]
-        L = int(N/2)
-
-        num_rows = N - L + 1
-
-        H = np.zeros((num_rows, L))
-
-        for k in range(num_rows):
-            H[k, :] = self.systemInput[k:k+L]
-
-        return H.T
-
-    def energyCriterionForTruncation(self, singularValues, order=2):
-        total_energy = np.sum(singularValues**order)
-        cumulative_energy = np.cumsum(singularValues**order) / total_energy
-        r = np.searchsorted(cumulative_energy, self.energyThreshold) + 1
-        return r                     
+        return self.buildHankelMatrix(self.systemInput)
     
-    def buildObservabilityAndStateMatrices(self):
-        H = self.buildOutputHankelMatrix()
+    def buildTruncatedSVD(self, matrix):
+        U, S, Vh = np.linalg.svd(matrix, full_matrices=False)
+        r = np.sum(S > self.truncationThreshold*S[0])
 
-        U, S, Vh = np.linalg.svd(H, full_matrices=False)
-        r = self.energyCriterionForTruncation(S)
+        return U[:, :r], S[:r], Vh[:r, :]
 
-        Ur = U[:, :r]
-        Sr = S[:r]
-        Vhr = Vh[:r, :]
-
+    def buildObservability_Naishadham(self, HankelOutput):
+        Ur, Sr, Vhr = self.buildTruncatedSVD(HankelOutput)
         S_sqrt = np.diag(np.sqrt(Sr))
 
         observabilityMatrix = np.matmul(Ur, S_sqrt)
@@ -69,128 +56,62 @@ class StateSpace:
 
         return observabilityMatrix, stateMatrix
     
-    def buildInputOutputCorrelationMatrix(self):
-        H_y = self.buildOutputHankelMatrix()
-        H_u = self.buildInputHankelMatrix()
+    def buildResidualCovarianceMatrix(self, HankelInput, HankelOutput):
+        numberOfColumns = HankelInput.shape[1]
 
-        U_u, S_u, Vt_u = np.linalg.svd(H_u, full_matrices=False)
+        # In problems with poor input excitation, the input Hankel matrix can be rank-deficient.
+        # To mitigate this, we need to exclude the near-zero singular values
+        U, S, Vh = np.linalg.svd(HankelInput, full_matrices=False)
+        nonzero_indices = S > 0
 
-        nonzero_indices = S_u > 0
-
-        U1 = U_u[:, nonzero_indices]
-        S1 = S_u[nonzero_indices]
-        V1 = Vt_u[nonzero_indices, :]
-
+        U1 = U[:, nonzero_indices]
+        S1 = S[nonzero_indices]
+        V1 = Vh[nonzero_indices, :]
         H_u_reduced = U1 @ np.diag(S1) @ V1
 
-        number_of_columns = H_u.shape[1]
+        R_yy = np.matmul(HankelOutput, HankelOutput.T) / numberOfColumns
+        R_yu = np.matmul(HankelOutput, H_u_reduced.T) / numberOfColumns
+        R_uu = np.matmul(H_u_reduced, H_u_reduced.T) / numberOfColumns
+        R_uy = np.matmul(H_u_reduced, HankelOutput.T) / numberOfColumns
 
-        R_yy = np.matmul(H_y, H_y.T) / number_of_columns
-        R_yu = np.matmul(H_y, H_u_reduced.T) / number_of_columns
-        R_uu = np.matmul(H_u_reduced, H_u_reduced.T) / number_of_columns
-        R_uy = np.matmul(H_u_reduced, H_y.T) / number_of_columns
-
-        R_hh = R_yy - np.matmul(np.matmul(R_yu, np.linalg.pinv(R_uu, rcond=1e-24)), R_uy)
-
-        return R_hh
+        return R_yy - np.matmul(np.matmul(R_yu, np.linalg.pinv(R_uu, rcond=1e-24)), R_uy)
     
-    def buildObservabilityMatrix_juang(self):
-        R_hh = self.buildInputOutputCorrelationMatrix()
+    def buildObservability_Juang(self, HankelInput, HankelOutput):
+        R_hh = self.buildResidualCovarianceMatrix(HankelInput, HankelOutput)
+        U, S, Vh = self.buildTruncatedSVD(R_hh)
 
-        U, S, Vh = np.linalg.svd(R_hh, full_matrices=False)
-        r = self.energyCriterionForTruncation(S)
-
-        Ur = U[:, :r]
-        Sr = S[:r]
-        Vhr = Vh[:r, :]
-
-        S_sqrt = np.diag(np.sqrt(Sr))
-
-        observabilityMatrix = Ur
-
-        return observabilityMatrix
+        return U
     
-    def buildObservabilityMatrix_orthogonalSpace(self):
-        Hu = self.buildInputHankelMatrix()
-        Hy = self.buildOutputHankelMatrix()
+    def buildProjectionOperators(self, HankelInput):
+        _, S, Vh = np.linalg.svd(HankelInput, full_matrices=False)
+        r = np.sum(S > self.truncationThreshold*S[0])
 
-        Q, R = np.linalg.qr(Hu.T, mode='reduced')
+        orthogonal_operator = Vh[r:, :].T @ Vh[r:, :]
+        parallel_operator = Vh[:r, :].T @ Vh[:r, :]
 
-        diag_R = np.abs(np.diag(R))
-        r = np.sum(diag_R > 1e-12*diag_R[0])
+        return orthogonal_operator, parallel_operator
 
-        Q1 = Q[:, r:]
-        Hy_perp = Hy @ Q1 @ Q1.T
-
-        U, S, Vh = np.linalg.svd(Hy_perp, full_matrices=False)
-        r2 = self.energyCriterionForTruncation(S)
-
-        Ur = U[:, :r2]
-
-        return Ur
     
-    def buildObservabilityMatrix_CJRamos(self):
+    def buildObservability_Projection(self):
         Hy = self.buildOutputHankelMatrix()
         Hu = self.buildInputHankelMatrix()
 
-        U_u, S_u, Vt_u = np.linalg.svd(Hu, full_matrices=False)
-        tol = 1e-9 * S_u[0]   
-        r = np.sum(S_u > tol)
-        # r = self.energyCriterionForTruncation(S_u)
+        orthogonal_operator, parallel_operator = self.buildProjectionOperators(Hu)
 
-        orthogonal_operator = Vt_u[r:, :].T @ Vt_u[r:, :]
-        parallel_operator = Vt_u[:r, :].T @ Vt_u[:r, :]
+        U_orthogonal, _, _ = self.buildTruncatedSVD(Hy @ orthogonal_operator)
+        U_parallel = self.buildObservability_Juang(Hu @ parallel_operator, Hy @ parallel_operator)
+        U_combined = np.hstack((U_parallel, U_orthogonal))
 
-        Hy_orthogonal = Hy @ orthogonal_operator
-        U_orthogonal, S_orthogonal, Vh_orthogonal = np.linalg.svd(Hy_orthogonal, full_matrices=False)
-        tol_orthogonal = 1e-9 * S_orthogonal[0]   
-        r_orthogonal = np.sum(S_orthogonal > tol_orthogonal)
-        # r_orthogonal = self.energyCriterionForTruncation(S_orthogonal)
-        U_orthogonal_r = U_orthogonal[:, :r_orthogonal]
-
-
-
-        Hy_parallel = Hy @ parallel_operator
-        Hu_parallel = Hu @ parallel_operator
-
-        number_of_columns = Hu_parallel.shape[1]
-
-        R_yy = np.matmul(Hy_parallel, Hy_parallel.T) / number_of_columns
-        R_yu = np.matmul(Hy_parallel, Hu_parallel.T) / number_of_columns
-        R_uu = np.matmul(Hu_parallel, Hu_parallel.T) / number_of_columns
-        R_uy = np.matmul(Hu_parallel, Hy_parallel.T) / number_of_columns
-
-        R_hh = R_yy - np.matmul(np.matmul(R_yu, np.linalg.pinv(R_uu)), R_uy)
-
-        U_parallel, S_parallel, Vh_parallel = np.linalg.svd(R_hh, full_matrices=False)
-        tol_parallel = 1e-9 * S_parallel[0]   
-        r_parallel = np.sum(S_parallel > tol_parallel)
-        # r_parallel = self.energyCriterionForTruncation(S_parallel)
-        U_parallel_r = U_parallel[:, :r_parallel]
-
-
-
-        U_combined = np.hstack((U_parallel_r, U_orthogonal_r))
-
-        observabilityMatrix, S_final, _ = np.linalg.svd(U_combined, full_matrices=False)
-        # tol_final = 1e-9 * S_final[0]
-        # r_final = np.sum(S_final > tol_final)
-        r_final = self.energyCriterionForTruncation(S_final)
-        observabilityMatrix = observabilityMatrix[:, :r_final]
-
-        return observabilityMatrix
+        return self.buildTruncatedSVD(U_combined)[0]
     
     def buildStateSpaceSystem(self):
-        # omega_L, X_L = self.buildObservabilityAndStateMatrices()  # For naishadham method
-        # omega_L = self.buildObservabilityMatrix_juang()
-        # omega_L = self.buildObservabilityMatrix_CJRamos()
 
         if self.observabilityMethod == 'Naishadham':
-            omega_L, X_L = self.buildObservabilityAndStateMatrices()
+            omega_L, X_L = self.buildObservability_Naishadham(self.buildOutputHankelMatrix())
         elif self.observabilityMethod == 'Juang':
-            omega_L = self.buildObservabilityMatrix_juang()
+            omega_L = self.buildObservability_Juang(self.buildInputHankelMatrix(), self.buildOutputHankelMatrix())
         elif self.observabilityMethod == 'Projection':
-            omega_L = self.buildObservabilityMatrix_CJRamos()
+            omega_L = self.buildObservability_Projection()
 
         omega1 = omega_L[:-self.numberOfOutputs, :]   # Observability matrix without last row L-rl
         omega2 = omega_L[self.numberOfOutputs:, :]    # Observability matrix without first row L-r1
