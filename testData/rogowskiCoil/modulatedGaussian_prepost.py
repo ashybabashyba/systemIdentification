@@ -44,7 +44,7 @@ new_system.addOutputData(
     np.interp(new_time, modulated_time_output, modulated_output_signal)
 )
 stateSpace_modulated = StateSpace(systemInput = new_system.interpolatedInputValues[0],
-                        systemOutput = new_system.outputValues, energyThreshold=1-1e-9)
+                        systemOutput = new_system.outputValues)
 
 A_modulated, B_modulated, C_modulated, D_modulated, initialState_modulated = stateSpace_modulated.buildStateSpaceSystem()
 

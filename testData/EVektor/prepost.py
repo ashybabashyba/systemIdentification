@@ -44,7 +44,7 @@ system.addOutputData(
     np.interp(newTimeVector, time_output_raw, output_signal_raw)
 )
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
-                        systemOutput = system.outputValues, energyThreshold=1-1e-6)
+                        systemOutput = system.outputValues)
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
@@ -224,6 +224,40 @@ plt.xlabel('Frequency (Hz)')
 plt.ylabel('Current (A)')
 plt.grid(which='both')
 plt.legend()
+plt.show()
+
+# %% trying reproduce Heidler current output with previously identified system
+
+data_heidler = np.load("heidler_dataset.npz")
+
+time_input_heidler = data_heidler["time_input"]
+input_signal_heidler = data_heidler["input_signal"]
+time_output_raw_heidler = data_heidler["time_output"]
+output_signal_raw_heidler = data_heidler["output_signal"]
+
+finalTime_heidler = np.arange(0, 50e-6 + step, step)
+finalOutput_heidler = np.interp(
+    finalTime_heidler,
+    time_output_raw_heidler,
+    output_signal_raw_heidler
+).reshape((1, -1))
+
+# input
+finalInput_heidler = np.interp(
+    finalTime_heidler,
+    time_input_heidler,
+    input_signal_heidler
+).reshape((1, -1))
+
+x_id_reconstructed, y_id_reconstructed = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput_heidler[0], x0=initialState)
+# %%
+
+plt.plot(finalTime*1e6, finalOutput_heidler[0], label='FDTD simulation', linewidth=3, color='k')
+plt.plot(finalTime*1e6, y_id_reconstructed[0], '--', label='Projection method [this work]', color='r')
+plt.xlabel('Time ($\mu$s)')
+plt.ylabel('Current (A)')
+plt.legend()
+plt.grid()
 plt.show()
 
 # %%

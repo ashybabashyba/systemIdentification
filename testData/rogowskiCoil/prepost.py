@@ -45,7 +45,7 @@ system.addOutputData(
     np.interp(newTimeVector, time_output_raw, output_signal_raw)
 )
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
-                        systemOutput = system.outputValues, energyThreshold=1-1e-9)
+                        systemOutput = system.outputValues)
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
@@ -249,8 +249,7 @@ for finalTrainingTime in finalTrainingTimes:
     )
     
     stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
-                            systemOutput = system.outputValues,
-                            energyThreshold=1-1e-9)
+                            systemOutput = system.outputValues)
     
     A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
@@ -344,7 +343,6 @@ system_Naishadham.addOutputData(
 
 stateSpace_Naishadham = StateSpace(systemInput = system_Naishadham.interpolatedInputValues[0],
                                    systemOutput = system_Naishadham.outputValues,
-                                   energyThreshold=1-1e-9,
                                    observabilityMethod='Naishadham')
 
 A_Naishadham, B_Naishadham, C_Naishadham, D_Naishadham, initialState_Naishadham = stateSpace_Naishadham.buildStateSpaceSystem()
@@ -365,7 +363,6 @@ system_Juang.addOutputData(
 
 stateSpace_Juang = StateSpace(systemInput = system_Juang.interpolatedInputValues[0],
                               systemOutput = system_Juang.outputValues,
-                              energyThreshold = 1-1e-9,
                               observabilityMethod = 'Juang')
 
 A_Juang, B_Juang, C_Juang, D_Juang, initialState_Juang = stateSpace_Juang.buildStateSpaceSystem()
@@ -385,7 +382,6 @@ system_Projection.addOutputData(
 
 stateSpace_Projection = StateSpace(systemInput = system_Projection.interpolatedInputValues[0],
                               systemOutput = system_Projection.outputValues,
-                              energyThreshold=1-1e-9,
                               observabilityMethod='Projection')
 
 A_Projection, B_Projection, C_Projection, D_Projection, initialState_Projection = stateSpace_Projection.buildStateSpaceSystem()
@@ -493,8 +489,8 @@ plt.plot(time_ns, projection, '--^', color=colors[3],
               label=labels[3])
 
 
-plt.xlim(32, 36)
-mask = (finalTime >= 32e-9) & (finalTime <= 36e-9)
+plt.xlim(34, 36)
+mask = (finalTime >= 34e-9) & (finalTime <= 36e-9)
 y_zoom = original[mask]
 plt.ylim(min(y_zoom)-0.5, max(y_zoom)+0.5)
 

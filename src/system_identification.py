@@ -3,12 +3,11 @@ import matplotlib.pyplot as plt
 from scipy.linalg import schur
 
 class StateSpace:
-    def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-6, observabilityMethod='Projection'):
+    def __init__(self, systemInput, systemOutput, truncationThreshold = 1e-9, observabilityMethod='Projection'):
         self.systemInput  = systemInput
         self.systemOutput = systemOutput
 
-        self.energyThreshold = energyThreshold
-        self.truncationThreshold = 1e-9
+        self.truncationThreshold = truncationThreshold
         self.numberOfOutputs = systemOutput.shape[0]
 
         self.observabilityMethod = observabilityMethod

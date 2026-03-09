@@ -273,8 +273,7 @@ system.addOutputData(np.interp(newTimeVector,
 
 
 stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
-                        systemOutput = system.outputValues,
-                        energyThreshold=1-1e-12)
+                        systemOutput = system.outputValues)
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
@@ -342,8 +341,7 @@ systemMulti.addOutputData(np.interp(newTimeVector,
                                np.loadtxt("currentOutput1.dat", skiprows=1, usecols=1)[::-1]))
 
 stateSpaceMulti = StateSpace(systemInput = systemMulti.interpolatedInputValues[0],
-                        systemOutput = systemMulti.outputValues,
-                        energyThreshold=1-1e-6)
+                        systemOutput = systemMulti.outputValues)
 
 H = stateSpaceMulti.buildOutputHankelMatrix()
 for i in range(H.shape[1] - 1):

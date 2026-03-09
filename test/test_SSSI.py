@@ -88,8 +88,7 @@ def test_RLC_circuit_training_output_reconstruction_and_prediction():
                                 np.loadtxt(trainingFile, skiprows=1, usecols=2)))
 
     stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
-                            systemOutput = system.outputValues,
-                            energyThreshold=1-1e-15)
+                            systemOutput = system.outputValues)
 
     A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
 
