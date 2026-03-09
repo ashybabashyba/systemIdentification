@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import schur
 
+from scipy.signal import dlsim
+
 class StateSpace:
     def __init__(self, systemInput, systemOutput, truncationThreshold = 1e-9, observabilityMethod='Projection'):
         self.systemInput  = systemInput
@@ -133,34 +135,42 @@ class StateSpace:
     def buildWeightedObserability(self, A, C):
         r = A.shape[0]
         M, N = self.systemOutput.shape
+        n_out = self.numberOfOutputs
 
-        Omega_rows = np.zeros((self.numberOfOutputs*N, r))
-        Ak = np.eye(r)
+        Omega_rows = np.zeros((n_out * N, r))
+        
+        current_CA = C
         for k in range(N):
-            Omega_rows[self.numberOfOutputs*k:self.numberOfOutputs*(k+1), :] = np.matmul(C, Ak)
-            Ak = np.matmul(Ak, A)
+            Omega_rows[k*n_out : (k+1)*n_out, :] = current_CA
+            current_CA = current_CA @ A  
 
-        Womega = np.zeros((self.numberOfOutputs*N, self.numberOfOutputs + r))
-        auxiliaryIdentity = np.eye(self.numberOfOutputs)
-        for k in range(N):
-            Womega[self.numberOfOutputs*k:self.numberOfOutputs*(k+1), :self.numberOfOutputs] = auxiliaryIdentity * self.systemInput[k]
+        Womega = np.zeros((n_out * N, n_out + r))
 
-        for k in range(N):
-            if k == 0:
-                Womega[self.numberOfOutputs*k:self.numberOfOutputs*(k+1), self.numberOfOutputs:] = 0.0
-            else:
-                past_w_reversed = self.systemInput[:k][::-1]            
-                Omegas = Omega_rows[:self.numberOfOutputs*k, :]               
-                Womega[self.numberOfOutputs*k:self.numberOfOutputs*(k+1), self.numberOfOutputs:] = np.matmul(past_w_reversed, Omegas)
+        inputs_expanded = np.repeat(self.systemInput, n_out).reshape(-1, 1)
+        Womega[:, :n_out] = np.tile(np.eye(n_out), (N, 1)) * inputs_expanded
+
+        if n_out == 1:
+            input_steps = np.zeros((N, N))
+            for i in range(1, N):
+                input_steps[i, :i] = self.systemInput[:i][::-1]
+            
+            Womega[:, n_out:] = input_steps @ Omega_rows
+        else:
+            for k in range(1, N):
+                past_w = self.systemInput[:k][::-1]
+                Womega[k*n_out:(k+1)*n_out, n_out:] = past_w @ Omega_rows[:k*n_out:n_out] 
 
         return Omega_rows, Womega
     
     def build_B_D_matrices(self, A, C, initialState):
         Omega_rows, Womega = self.buildWeightedObserability(A, C)
         M, N = self.systemOutput.shape
-        Y = self.systemOutput.T.reshape(M * N,)
+        Y = self.systemOutput.reshape(-1, order="F")
 
-        RHS = Y - np.matmul(Omega_rows, initialState)    
+        if not np.any(initialState):
+            RHS = Y
+        else:
+            RHS = Y - Omega_rows @ initialState
 
         theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
         D = theta[:self.numberOfOutputs].reshape((self.numberOfOutputs, 1))
@@ -177,26 +187,10 @@ class StateSpace:
     
 
     def evolveInput(self, A, B, C, D, u, x0):
-        u = np.asarray(u).reshape(-1)       
-        n_steps = len(u)
-        r = A.shape[0]                      
-
-        A = np.asarray(A)
-        B = np.asarray(B).reshape(r, 1)
-        C = np.asarray(C).reshape(self.numberOfOutputs, r)
-        D = np.asarray(D).reshape(self.numberOfOutputs, 1)
-
-        x = np.zeros((n_steps, r, 1))
-        y = np.zeros((self.numberOfOutputs, n_steps))
-
-        x[0] = np.asarray(x0).reshape(r, 1)
-        y[0] = np.matmul(C, x[0]) + D * u[0]
-
-        for k in range(1, n_steps):
-            x[k] = np.matmul(A, x[k-1]) + B * u[k-1]
-            y[:, k] = np.matmul(C, x[k]) + D * u[k]
-
-        return x, y
+        system = (A, B, C, D, 1.0)
+        t, y, x = dlsim(system, u, x0=x0)
+        
+        return x, y.T 
     
 def stabilize_matrix(A, epsilon=1e-9):
     T, Q = schur(A, output='real')
@@ -224,21 +218,26 @@ def stabilize_matrix(A, epsilon=1e-9):
 
 def stabilize_schur_smooth(A, epsilon=1e-6):
     T, Q = schur(A, output='real')
-    n = A.shape[0]
-    i = 0
+    n = T.shape[0]
+    limit = 1.0 - epsilon
 
-    while i < n:
-        if i == n - 1 or abs(T[i+1, i]) < 1e-12:
-            lam = T[i, i]
-            scale = (1 - epsilon) / max(1.0, abs(lam))
-            T[i, i] = scale * lam
-            i += 1
-        else:
-            T_block = T[i:i+2, i:i+2]
-            eigvals = np.linalg.eigvals(T_block)
-            r = max(abs(eigvals))
-            scale = (1 - epsilon) / max(1.0, r)
-            T[i:i+2, i:i+2] = scale * T_block
-            i += 2
+    diag_indices = np.diag_indices(n)
+    lams = T[diag_indices]
+    
+    bad_lams_mask = np.abs(lams) >= 1.0
+    if np.any(bad_lams_mask):
+        scales = limit / np.abs(lams[bad_lams_mask])
+        T[diag_indices[0][bad_lams_mask], diag_indices[1][bad_lams_mask]] *= scales
+
+    subdiag = np.diag(T, k=-1)
+    idx_2x2 = np.where(np.abs(subdiag) > 1e-12)[0]
+
+    for i in idx_2x2:
+        T_block = T[i:i+2, i:i+2]
+        r_block = np.max(np.abs(np.linalg.eigvals(T_block)))
+        
+        if r_block >= 1.0:
+            scale = limit / r_block
+            T[i:i+2, i:i+2] *= scale
 
     return Q @ T @ Q.T
