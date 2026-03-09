@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Ramos-Salas
+    given-names: Carlos Julio
+    orcid: https://orcid.org/0009-0006-9905-4739
+  - family-names: Arcos Botías
+    given-names: Cai
+  - family-names: Gascón
+    given-names: Alberto 
+    orcid: https://orcid.org/0000-0003-1190-2248
+  - family-names: Muñoz Manterola
+    given-names: Alejandro
+    orcid: https://orcid.org/0000-0002-2406-8128
+  - family-names: de la Rubia
+    given-names: Valentin
+    orcid: https://orcid.org/0000-0002-2894-6813
+  - family-names: Angulo
+    given-names: Luis D.
+    orcid: https://orcid.org/0000-0002-1690-7892
+url: https://github.com/ashybabashyba/systemIdentification
+title: "Orthogonal Projection-Based System Identification"
