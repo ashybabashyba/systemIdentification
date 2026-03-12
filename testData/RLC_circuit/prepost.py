@@ -384,4 +384,75 @@ plt.tight_layout()
 # plt.savefig("../../../../fig/RLC_output_comparison.png", dpi=300, bbox_inches='tight')
 plt.show()
 
+# %% System with two outputs
+
+step = 0.01e-3
+initialTrainingTime = 0
+finalTrainingTime = 1.0e-3
+newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+trainingFile = "RLC_circuit_modulated_gaussian.txt"
+predictionFile = "RLC_circuit_modulated_gaussian_final.txt"
+
+system = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                     timeOutput=newTimeVector)
+
+system.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+system.buildInterpolatedInputValues()
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=1))) # Adding the input as a second output
+
+stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                        systemOutput = system.outputValues)
+
+A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+finalTime = np.arange(0, 5e-3 + step, step)
+finalOutput = np.interp(finalTime, 
+                   np.loadtxt(predictionFile, skiprows=1, usecols=0), 
+                   np.loadtxt(predictionFile, skiprows=1, usecols=1)).reshape((1, -1))
+
+finalInput = np.interp(finalTime, 
+                   np.loadtxt(trainingFile, usecols=0, skiprows=1), 
+                   np.loadtxt(trainingFile, usecols=1, skiprows=1)).reshape((1, -1))
+
+x_id_predicted, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+
+
+# %%
+fig, axs = plt.subplots(2, 1, figsize=(10, 8))
+
+axs[0].plot(finalTime, finalOutput[0], label='Original Output')
+axs[0].plot(finalTime, y_id_predicted[0], '--', label='SSSI method Output')
+axs[0].axvspan(
+    initialTrainingTime,
+    finalTrainingTime,
+    alpha=0.2,
+    label='Training region'
+)
+axs[0].set_xlabel('Time')
+axs[0].set_ylabel('Current')
+axs[0].legend()
+axs[0].grid()
+
+axs[1].plot(finalTime, finalInput[0], label='Original Input')
+axs[1].plot(finalTime, y_id_predicted[1], '--', label='SSSI method Output')
+axs[1].axvspan(
+    initialTrainingTime,
+    finalTrainingTime,
+    alpha=0.2,
+    label='Training region'
+)
+axs[1].set_xlabel('Time')
+axs[1].set_ylabel('Voltage')
+axs[1].legend()
+axs[1].grid()
+
+plt.tight_layout()
+plt.show()
+
 # %%

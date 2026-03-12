@@ -127,7 +127,7 @@ class StateSpace:
         A, _, _, _ = np.linalg.lstsq(omega1, omega2, rcond=None)
         A = stabilize_schur_smooth(A)
 
-        C, _, _, _ = np.linalg.lstsq(A.T, observabilityMatrix[self.numberOfOutputs, :].T, rcond=None)
+        C, _, _, _ = np.linalg.lstsq(A.T, observabilityMatrix[self.numberOfOutputs:2*self.numberOfOutputs, :].T, rcond=None)
         C = np.asarray(C).reshape(self.numberOfOutputs, A.shape[0])
 
         return A, C
@@ -158,7 +158,10 @@ class StateSpace:
         else:
             for k in range(1, N):
                 past_w = self.systemInput[:k][::-1]
-                Womega[k*n_out:(k+1)*n_out, n_out:] = past_w @ Omega_rows[:k*n_out:n_out] 
+                CA_blocks = Omega_rows[:k*n_out].reshape(k, n_out, r)
+                block = np.tensordot(past_w, CA_blocks, axes=(0, 0))
+
+                Womega[k*n_out:(k+1)*n_out, n_out:] = block
 
         return Omega_rows, Womega
     
