@@ -456,3 +456,53 @@ plt.tight_layout()
 plt.show()
 
 # %%
+
+step = 0.01e-3
+initialTrainingTime = 0
+finalTrainingTime = 1.0e-3
+newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+trainingFile = "RLC_circuit_modulated_gaussian.txt"
+predictionFile = "RLC_circuit_modulated_gaussian_final.txt"
+
+resistor_voltage_file = "RLC_voltage_at_R"
+inductor_voltage_file = "RLC_voltage_at_L"
+capacitor_voltage_file = "RLC_voltage_at_C"
+
+system = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                     timeOutput=newTimeVector)
+
+system.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+system.buildInterpolatedInputValues()
+
+## Resistor data ##
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(resistor_voltage_file, skiprows=1, usecols=0), 
+                               np.loadtxt(resistor_voltage_file, skiprows=1, usecols=1))) 
+
+## Inductor data ##
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(inductor_voltage_file, skiprows=1, usecols=0), 
+                               np.loadtxt(inductor_voltage_file, skiprows=1, usecols=1)))
+
+## Capacitor data ##
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                               np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(capacitor_voltage_file, skiprows=1, usecols=0), 
+                               np.loadtxt(capacitor_voltage_file, skiprows=1, usecols=1)))
+
+stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                        systemOutput = system.outputValues)
+
+A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+
+# %%
