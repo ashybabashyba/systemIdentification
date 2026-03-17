@@ -1,3 +1,5 @@
+from typing import dataclass_transform
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import schur
@@ -6,8 +8,10 @@ from scipy.signal import dlsim
 
 class StateSpace:
     def __init__(self, systemInput, systemOutput, truncationThreshold = 1e-9, observabilityMethod='Projection'):
-        self.systemInput  = systemInput
         self.systemOutput = systemOutput
+        self.systemInput  = systemInput
+
+        # self.systemOutputDetendred, self.D_est = self.detrendedOutput()
 
         self.truncationThreshold = truncationThreshold
         self.numberOfOutputs = systemOutput.shape[0]
@@ -16,6 +20,24 @@ class StateSpace:
 
         if self.observabilityMethod not in ['Naishadham', 'Juang', 'Projection']:
             raise ValueError("Invalid observability method. Choose 'Naishadham', 'Juang', or 'Projection'.")
+        
+    def detrendedOutput(self):
+        data = self.systemInput
+        if data.ndim == 1:
+            data = data.reshape(1, data.shape[0])
+
+        U_T = data.T
+        Y_T = self.systemOutput.T
+
+        D_est_T = np.linalg.lstsq(U_T, Y_T, rcond=None)[0]  # m x p
+        D_est = D_est_T.T
+
+        if D_est.shape[0] == 1 and D_est.shape[1] == 1:
+            Y_tilde = self.systemOutput - D_est * data
+        else:
+            Y_tilde = self.systemOutput - D_est @ data
+
+        return Y_tilde, D_est
 
     def buildHankelMatrix(self, data):
         if data.ndim == 1:
@@ -192,6 +214,14 @@ class StateSpace:
     def evolveInput(self, A, B, C, D, u, x0):
         system = (A, B, C, D, 1.0)
         t, y, x = dlsim(system, u, x0=x0)
+
+        # if u.ndim == 1:
+        #     u = u.reshape(1, u.shape[0])
+
+        # if self.D_est.shape[0] == 1 and self.D_est.shape[1] == 1:
+        #     y = y + self.D_est * u
+        # else:
+        #     y = y + u.T @ self.D_est.T
         
         return x, y.T 
     
