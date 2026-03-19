@@ -315,3 +315,161 @@ def test_RLC_multioutput_input_output_comparison():
     assert np.allclose(finalOutput[0], y_id_predicted[0], atol=1e-4)
     assert np.allclose(finalOutput[0], y_id_predicted[2], atol=1e-4)
     assert np.allclose(finalOutput[0], y_id_predicted[4], atol=1e-4)
+
+def test_simple_resistor_circuit_component_estimation_and_modification():
+    step = 0.01e-3
+    initialTrainingTime = 0
+    finalTrainingTime = 1.25e-3
+    newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+    dataFile = "testData/simple_resistor_circuit/simpleResistor_data"
+
+
+    system = SystemIdentificationWrapper(timeInput=np.loadtxt(dataFile, usecols=0, skiprows=1),
+                                        timeOutput=newTimeVector)
+
+    system.addInputData(-np.loadtxt(dataFile, usecols=1, skiprows=1))
+    system.buildInterpolatedInputValues()
+    # Current
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=2)))
+    # Voltage
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=1)))
+
+    stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                            systemOutput = system.outputValues)
+
+    A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+    assert np.isclose(np.abs(1/D[0]), 50)
+
+    D_modified = D.copy()
+    D_modified[0] = D[0] / 2
+
+    finalTime = np.arange(0, 5e-3 + step, step)
+    finalInput = np.interp(finalTime, 
+                    np.loadtxt(dataFile, usecols=0, skiprows=1), 
+                    np.loadtxt(dataFile, usecols=1, skiprows=1)).reshape((1, -1))
+
+
+    _, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+    _, y_id_modified = stateSpace.evolveInput(A=A, B=B, C=C, D=D_modified, u=finalInput[0], x0=initialState)
+
+    assert np.allclose(y_id[0]/2, y_id_modified[0])
+
+def test_simple_resistor_in_series_circuit_component_estimation_and_modification():
+    step = 0.01e-3
+    initialTrainingTime = 0
+    finalTrainingTime = 1.25e-3
+    newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+    dataFile = "testData/simple_resistor_circuit/dataSet_seriesR"
+
+
+    system = SystemIdentificationWrapper(timeInput=np.loadtxt(dataFile, usecols=0, skiprows=1),
+                                        timeOutput=newTimeVector)
+
+    system.addInputData(-np.loadtxt(dataFile, usecols=4, skiprows=1))
+    system.buildInterpolatedInputValues()
+    # Current
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=4)))
+    # Voltage at R2
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=1)))
+
+    # Total voltage
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=2)))
+
+    # Voltage at R1
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=3)))
+
+    stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                            systemOutput = system.outputValues)
+
+    A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+    assert np.isclose(np.abs(D[2]), np.abs(D[1] + D[3]))
+    assert np.isclose(np.abs(D[1]), 150)
+    assert np.isclose(np.abs(D[3]), 50)
+
+    D_modified = D.copy()
+    D_modified[3] = 2 * D[3]
+    D_modified[2] = np.abs(D_modified[1] + D_modified[3])
+
+    finalTime = np.arange(0, 5e-3 + step, step)
+    finalInput = np.interp(finalTime, 
+                    np.loadtxt(dataFile, usecols=0, skiprows=1), 
+                    np.loadtxt(dataFile, usecols=1, skiprows=1)).reshape((1, -1))
+
+    _, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+    _, y_id_modified = stateSpace.evolveInput(A=A, B=B, C=C, D=D_modified, u=finalInput[0], x0=initialState)
+
+    assert np.allclose(2*y_id[3], y_id_modified[3], atol=1e-3)
+    assert np.allclose(-y_id_modified[2], y_id_modified[3] + y_id_modified[1], atol=1e-3)
+
+def test_simple_resistor_in_parallel_circuit_component_estimation_and_modification():
+    step = 0.01e-3
+    initialTrainingTime = 0
+    finalTrainingTime = 1.25e-3
+    newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+    dataFile = "testData/simple_resistor_circuit/dataSet_parallelR"
+
+
+    system = SystemIdentificationWrapper(timeInput=np.loadtxt(dataFile, usecols=0, skiprows=1),
+                                        timeOutput=newTimeVector)
+
+    system.addInputData(-np.loadtxt(dataFile, usecols=1, skiprows=1))
+    system.buildInterpolatedInputValues()
+    # Total Current
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=4)))
+    # Current at R2
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=3)))
+
+    # Current at R1
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=2)))
+
+    # Voltage
+    system.addOutputData(-np.interp(newTimeVector, 
+                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                np.loadtxt(dataFile, skiprows=1, usecols=1)))
+
+    stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                            systemOutput = system.outputValues)
+
+    A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+    assert np.isclose(np.abs(D[0]), np.abs(D[2] + D[1]))
+    assert np.isclose(np.abs(1/D[2]), 100)
+    assert np.isclose(np.abs(1/D[1]), 150)
+
+    D_modified = D.copy()
+    D_modified[2] = D[2] / 2
+    D_modified[0] = np.abs(D_modified[1] + D_modified[2])
+
+    finalTime = np.arange(0, 5e-3 + step, step)
+    finalInput = np.interp(finalTime, 
+                    np.loadtxt(dataFile, usecols=0, skiprows=1), 
+                    np.loadtxt(dataFile, usecols=1, skiprows=1)).reshape((1, -1))
+    
+    _, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+    _, y_id_modified = stateSpace.evolveInput(A=A, B=B, C=C, D=D_modified, u=finalInput[0], x0=initialState)
+
+    assert np.allclose(y_id[2] / 2, y_id_modified[2])
+    assert np.allclose(-y_id_modified[0], y_id_modified[1] + y_id_modified[2])
