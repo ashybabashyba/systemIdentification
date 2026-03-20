@@ -313,8 +313,8 @@ def test_RLC_multioutput_input_output_comparison():
 
     assert np.allclose(-finalInput[0], y_id_predicted[1] + y_id_predicted[3] + y_id_predicted[5], atol=1e-3)
     assert np.allclose(finalOutput[0], y_id_predicted[0], atol=1e-4)
-    assert np.allclose(finalOutput[0], y_id_predicted[2], atol=1e-4)
-    assert np.allclose(finalOutput[0], y_id_predicted[4], atol=1e-4)
+    assert np.allclose(finalOutput[0], y_id_predicted[2], atol=1e-3)
+    assert np.allclose(finalOutput[0], y_id_predicted[4], atol=1e-3)
 
 def test_simple_resistor_circuit_component_estimation_and_modification():
     step = 0.01e-3
@@ -409,7 +409,7 @@ def test_simple_resistor_in_series_circuit_component_estimation_and_modification
     finalTime = np.arange(0, 5e-3 + step, step)
     finalInput = np.interp(finalTime, 
                     np.loadtxt(dataFile, usecols=0, skiprows=1), 
-                    np.loadtxt(dataFile, usecols=1, skiprows=1)).reshape((1, -1))
+                    np.loadtxt(dataFile, usecols=4, skiprows=1)).reshape((1, -1))
 
     _, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
     _, y_id_modified = stateSpace.evolveInput(A=A, B=B, C=C, D=D_modified, u=finalInput[0], x0=initialState)

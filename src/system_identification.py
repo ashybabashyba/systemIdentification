@@ -197,9 +197,13 @@ class StateSpace:
         else:
             RHS = Y - Omega_rows @ initialState
 
-        theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
-        D = theta[:self.numberOfOutputs].reshape((self.numberOfOutputs, 1))
-        B = theta[self.numberOfOutputs:].reshape((A.shape[0], 1))
+        W_D = Womega[:, :self.numberOfOutputs]
+        W_B = Womega[:, self.numberOfOutputs:]
+
+        D = np.linalg.lstsq(W_D, RHS, rcond=None)[0].reshape((self.numberOfOutputs, 1))
+
+        RHS_B = RHS - (W_D @ D).ravel()
+        B = np.linalg.lstsq(W_B, RHS_B, rcond=None)[0].reshape((A.shape[0], 1))
 
         return B, D
     
