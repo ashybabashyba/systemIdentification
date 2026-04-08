@@ -479,7 +479,7 @@ system.buildInterpolatedInputValues()
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(trainingFile, skiprows=1, usecols=0), 
                                np.loadtxt(trainingFile, skiprows=1, usecols=2)))
-system.addOutputData(np.interp(newTimeVector, 
+system.addOutputData(-np.interp(newTimeVector, 
                                np.loadtxt(resistor_voltage_file, skiprows=1, usecols=0), 
                                np.loadtxt(resistor_voltage_file, skiprows=1, usecols=1))) 
 
@@ -487,7 +487,7 @@ system.addOutputData(np.interp(newTimeVector,
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(trainingFile, skiprows=1, usecols=0), 
                                np.loadtxt(trainingFile, skiprows=1, usecols=2)))
-system.addOutputData(np.interp(newTimeVector, 
+system.addOutputData(-np.interp(newTimeVector, 
                                np.loadtxt(inductor_voltage_file, skiprows=1, usecols=0), 
                                np.loadtxt(inductor_voltage_file, skiprows=1, usecols=1)))
 
@@ -495,7 +495,7 @@ system.addOutputData(np.interp(newTimeVector,
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(trainingFile, skiprows=1, usecols=0), 
                                np.loadtxt(trainingFile, skiprows=1, usecols=2)))
-system.addOutputData(np.interp(newTimeVector, 
+system.addOutputData(-np.interp(newTimeVector, 
                                np.loadtxt(capacitor_voltage_file, skiprows=1, usecols=0), 
                                np.loadtxt(capacitor_voltage_file, skiprows=1, usecols=1)))
 
@@ -503,6 +503,3 @@ stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
                         systemOutput = system.outputValues)
 
 A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
-
-
-# %%

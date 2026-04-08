@@ -21,7 +21,7 @@ from sippy_unipi import functionsetSIM as fsetSIM
 # %%
 step = 0.01e-3
 initialTrainingTime = 0
-finalTrainingTime = 1.25e-3
+finalTrainingTime = 1.75e-3
 newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
 
 dataFile = "simpleResistor_data"
