@@ -14,6 +14,7 @@ except ImportError:
     from sippy_unipi import system_identification
     from system_identification_wrapper import SystemIdentificationWrapper
     from system_identification import StateSpace
+    from kalman_filters import KalmanProcessing
 
 from sippy_unipi import functionset as fset
 from sippy_unipi import functionsetSIM as fsetSIM
@@ -36,14 +37,14 @@ system.buildInterpolatedInputValues()
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
                                np.loadtxt(dataFile, skiprows=1, usecols=1)))
-# # Voltage at L
-# system.addOutputData(np.interp(newTimeVector, 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=2)))
-# # Voltage at source
-# system.addOutputData(np.interp(newTimeVector, 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=3)))
+# Voltage at L
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                               np.loadtxt(dataFile, skiprows=1, usecols=2)))
+# Voltage at source
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                               np.loadtxt(dataFile, skiprows=1, usecols=3)))
 # Current
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
@@ -131,4 +132,71 @@ plt.grid(which='both')
 plt.legend()
 plt.show()
 
+# %% Kalman filter evolution
+
+## System initialization
+step = 0.01e-3
+initialTrainingTime = 0
+finalTrainingTime = 1.75e-3
+newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+dataFile = "dataSet_seriesRL"
+
+
+system = SystemIdentificationWrapper(timeInput=np.loadtxt(dataFile, usecols=0, skiprows=1),
+                                     timeOutput=newTimeVector)
+
+system.addInputData(np.loadtxt(dataFile, usecols=3, skiprows=1))
+system.buildInterpolatedInputValues()
+# Voltage at R
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                               np.loadtxt(dataFile, skiprows=1, usecols=1)))
+# # Voltage at L
+# system.addOutputData(np.interp(newTimeVector, 
+#                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+#                                np.loadtxt(dataFile, skiprows=1, usecols=2)))
+# # Voltage at source
+# system.addOutputData(np.interp(newTimeVector, 
+#                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
+#                                np.loadtxt(dataFile, skiprows=1, usecols=3)))
+# Current
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                               np.loadtxt(dataFile, skiprows=1, usecols=4)))
+
+stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                        systemOutput = system.outputValues)
+
+A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+# %% Kalman filter evolution
+
+finalTime = np.arange(0, 5e-3 + step, step)
+
+finalInput = np.interp(finalTime, 
+                   np.loadtxt(dataFile, usecols=0, skiprows=1), 
+                   np.loadtxt(dataFile, usecols=3, skiprows=1)).reshape((1, -1))
+
+kalmanSystem = KalmanProcessing(A=A, B=B, C=C, D=D, initialState=initialState)
+kalmanSystem.setKalmanProcessNoise()
+kalmanSystem.setKalmanMeasurementNoise()
+
+kalmanSystem.addInputData(finalInput[0], finalTime)
+
+for i in range(system.outputValues.shape[0]):
+    kalmanSystem.addReferenceOutput(system.outputValues[i], newTimeVector)
+
+# kalmanSystem.buildInterpolatedReference()
+
+x_kalman, y_kalman = kalmanSystem.evolveWithKalmanFilter()
+_, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+
+plt.plot(finalTime,     y_id[1], label='Reconstructed')
+plt.plot(finalTime, y_kalman[1], '--', label='Reconstructed Kalman')
+plt.xlabel('Time')
+# plt.xlim(0, 1e-3)
+plt.legend()
+plt.grid()
+plt.show()
 # %%
