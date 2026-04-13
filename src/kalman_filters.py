@@ -91,7 +91,7 @@ class KalmanProcessing():
         if u.ndim == 1:
             u = u.reshape(-1, 1)   # (N, m)
 
-        N = u.shape[0]
+        N = u.shape[1]
         n = self.A_est.shape[0]
         p = self.C_est.shape[0]
 
@@ -99,17 +99,17 @@ class KalmanProcessing():
         y = np.zeros((p, N))
 
         x[:, 0] = self.initialState
-        y[:, 0] = self.C_est @ x[:, 0] + self.D_est @ u[0]
+        y[:, 0] = self.C_est @ x[:, 0] + self.D_est @ u[:,0]
 
         P = np.eye(n)  # Se inicializa como identidad?
         Q = self.Q
         R = self.R
 
         for k in range(1, N):
-            x_pred = self.A_est @ x[:, k-1] + self.B_est @ u[k-1]
+            x_pred = self.A_est @ x[:, k-1] + self.B_est @ u[:,k-1]
             P_pred = self.A_est @ P @ self.A_est.T + Q
 
-            y_pred = self.C_est @ x_pred + self.D_est @ u[k]
+            y_pred = self.C_est @ x_pred + self.D_est @ u[:,k]
 
             # Correction step
             if k <= self.k_prime:
@@ -122,14 +122,14 @@ class KalmanProcessing():
                 K = P_pred @ self.C_est.T @ np.linalg.inv(S)
 
                 x[:, k] = x_pred + K @ (y_ref - y_pred)
-                P = (np.eye(n) - K @ self.C_est) @ P_pred
+                P = (np.eye(n) - K @ self.C_est) @ P_pred   # Inestable numericamente
 
             # No correction
             else:
                 x[:, k] = x_pred
                 P = P_pred
 
-            y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[k]
+            y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[:,k]
 
         self.stateTrajectory = x
         self.outputTrajectory = y
