@@ -31,7 +31,7 @@ dataFile = "dataSet_seriesRL"
 system = SystemIdentificationWrapper(timeInput=np.loadtxt(dataFile, usecols=0, skiprows=1),
                                      timeOutput=newTimeVector)
 
-system.addInputData(np.loadtxt(dataFile, usecols=3, skiprows=1))
+system.addInputData(np.loadtxt(dataFile, usecols=4, skiprows=1))
 system.buildInterpolatedInputValues()
 # Voltage at R
 system.addOutputData(np.interp(newTimeVector, 
@@ -82,9 +82,9 @@ p_phys = real_poles[np.argmax(np.real(real_poles))]
 # %%
 
 finalTime = np.arange(0, 5e-3 + step, step)
-finalOutput = np.interp(finalTime, 
-                   np.loadtxt(dataFile, skiprows=1, usecols=0), 
-                   np.loadtxt(dataFile, skiprows=1, usecols=3)).reshape((1, -1))
+finalOutput = np.array([np.interp(finalTime, 
+                                  np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                  np.loadtxt(dataFile, skiprows=1, usecols=i)) for i in range(1, 5)])
 
 finalInput = np.interp(finalTime, 
                    np.loadtxt(dataFile, usecols=0, skiprows=1), 
@@ -93,8 +93,8 @@ finalInput = np.interp(finalTime,
 _, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
 
 
-# plt.plot(finalTime, finalOutput[0], label='Voltage at source')
-plt.plot(finalTime, y_id[1], '--', label='Reconstructed voltage')
+plt.plot(finalTime, finalOutput[0], label='Voltage at source')
+plt.plot(finalTime,        y_id[0], '--', label='Reconstructed voltage')
 plt.xlabel('Time')
 plt.ylabel('Voltage')
 # plt.xlim(0, 1e-3)
@@ -146,20 +146,20 @@ dataFile = "dataSet_seriesRL"
 system = SystemIdentificationWrapper(timeInput=np.loadtxt(dataFile, usecols=0, skiprows=1),
                                      timeOutput=newTimeVector)
 
-system.addInputData(np.loadtxt(dataFile, usecols=3, skiprows=1))
+system.addInputData(np.loadtxt(dataFile, usecols=4, skiprows=1))
 system.buildInterpolatedInputValues()
 # Voltage at R
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
                                np.loadtxt(dataFile, skiprows=1, usecols=1)))
-# # Voltage at L
-# system.addOutputData(np.interp(newTimeVector, 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=2)))
-# # Voltage at source
-# system.addOutputData(np.interp(newTimeVector, 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
-#                                np.loadtxt(dataFile, skiprows=1, usecols=3)))
+# Voltage at L
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                               np.loadtxt(dataFile, skiprows=1, usecols=2)))
+# Voltage at source
+system.addOutputData(np.interp(newTimeVector, 
+                               np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                               np.loadtxt(dataFile, skiprows=1, usecols=3)))
 # Current
 system.addOutputData(np.interp(newTimeVector, 
                                np.loadtxt(dataFile, skiprows=1, usecols=0), 
@@ -176,7 +176,11 @@ finalTime = np.arange(0, 5e-3 + step, step)
 
 finalInput = np.interp(finalTime, 
                    np.loadtxt(dataFile, usecols=0, skiprows=1), 
-                   np.loadtxt(dataFile, usecols=3, skiprows=1)).reshape((1, -1))
+                   np.loadtxt(dataFile, usecols=4, skiprows=1)).reshape((1, -1))
+
+finalOutput = np.array([np.interp(finalTime, 
+                                  np.loadtxt(dataFile, skiprows=1, usecols=0), 
+                                  np.loadtxt(dataFile, skiprows=1, usecols=i)) for i in range(1, 5)])
 
 kalmanSystem = KalmanProcessing(A=A, B=B, C=C, D=D, initialState=initialState)
 kalmanSystem.setKalmanProcessNoise()
@@ -192,10 +196,20 @@ for i in range(system.outputValues.shape[0]):
 x_kalman, y_kalman = kalmanSystem.evolveWithKalmanFilter()
 _, y_id = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
 
-plt.plot(finalTime,     y_id[1], label='Reconstructed')
-plt.plot(finalTime, y_kalman[1], '--', label='Reconstructed Kalman')
+output_index = 3
+
+
+plt.plot(finalTime, finalOutput[output_index], label='Original output', linewidth=2, color='black')
+plt.plot(finalTime,        y_id[output_index], '-.', label='Reconstructed')
+plt.plot(finalTime,    y_kalman[output_index], '--', label='Reconstructed Kalman')
+plt.fill_between(
+    finalTime,
+    y_kalman[output_index] - kalmanSystem.outputStd[output_index],
+    y_kalman[output_index] + kalmanSystem.outputStd[output_index],
+    alpha=0.2
+)
 plt.xlabel('Time')
-# plt.xlim(0, 1e-3)
+plt.ylim(-0.020, 0.020)
 plt.legend()
 plt.grid()
 plt.show()

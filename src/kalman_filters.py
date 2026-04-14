@@ -20,7 +20,7 @@ class KalmanProcessing():
         Q = np.zeros((self.A_est.shape[0], self.A_est.shape[1]))
 
         for i in range(self.A_est.shape[0]):
-            Q[i, i] = 0.01          # Cambiar por gaussiana, eventualmente converge pero igual
+            Q[i, i] = 1e-7          # Cambiar por gaussiana, eventualmente converge pero igual
 
         self.Q = Q
         return self.Q
@@ -29,7 +29,7 @@ class KalmanProcessing():
         R = np.zeros((self.C_est.shape[0], self.C_est.shape[0]))
 
         for i in range(self.C_est.shape[0]):
-            R[i, i] = 0.01          # Cambiar por gaussiana, eventualmente converge pero igual
+            R[i, i] = 1e-7          # Cambiar por gaussiana, eventualmente converge pero igual
 
         self.R = R
         return self.R
@@ -98,12 +98,18 @@ class KalmanProcessing():
         x = np.zeros((n, N))
         y = np.zeros((p, N))
 
+        Sigma_y = np.zeros((p, p, N))   # covarianza completa
+        sigma_y = np.zeros((p, N))      # desviación estándar 
+
         x[:, 0] = self.initialState
         y[:, 0] = self.C_est @ x[:, 0] + self.D_est @ u[:,0]
 
         P = np.eye(n)  # Se inicializa como identidad?
         Q = self.Q
         R = self.R
+
+        Sigma_y[:, :, 0] = self.C_est @ P @ self.C_est.T
+        sigma_y[:, 0] = np.sqrt(np.diag(Sigma_y[:, :, 0]))
 
         for k in range(1, N):
             x_pred = self.A_est @ x[:, k-1] + self.B_est @ u[:,k-1]
@@ -131,7 +137,13 @@ class KalmanProcessing():
 
             y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[:,k]
 
+            Sigma_y[:, :, k] = self.C_est @ P @ self.C_est.T
+            sigma_y[:, k] = np.sqrt(np.diag(Sigma_y[:, :, k]))
+
         self.stateTrajectory = x
         self.outputTrajectory = y
+
+        self.outputCovariance = Sigma_y
+        self.outputStd = sigma_y
 
         return x, y
