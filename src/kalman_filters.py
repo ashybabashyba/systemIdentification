@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.signal import dlsim
 
 class KalmanProcessing():
     def __init__(self, A, B, C, D, initialState):
@@ -20,7 +19,7 @@ class KalmanProcessing():
         Q = np.zeros((self.A_est.shape[0], self.A_est.shape[1]))
 
         for i in range(self.A_est.shape[0]):
-            Q[i, i] = 0.01          # Cambiar por gaussiana, eventualmente converge pero igual
+            Q[i, i] = 1e-9   # Cambiar por gaussiana, eventualmente converge pero igual
 
         self.Q = Q
         return self.Q
@@ -29,7 +28,7 @@ class KalmanProcessing():
         R = np.zeros((self.C_est.shape[0], self.C_est.shape[0]))
 
         for i in range(self.C_est.shape[0]):
-            R[i, i] = 0.01          # Cambiar por gaussiana, eventualmente converge pero igual
+            R[i, i] = 1e-12  # Cambiar por gaussiana, eventualmente converge pero igual
 
         self.R = R
         return self.R
@@ -105,6 +104,11 @@ class KalmanProcessing():
         Q = self.Q
         R = self.R
 
+        Sigma_y = np.zeros((p, p, N))   # covarianza completa
+        sigma_y = np.zeros((p, N))      # desviación estándar 
+        Sigma_y[:, :, 0] = self.C_est @ P @ self.C_est.T
+        sigma_y[:, 0] = np.sqrt(np.diag(Sigma_y[:, :, 0]))
+
         for k in range(1, N):
             x_pred = self.A_est @ x[:, k-1] + self.B_est @ u[k-1]
             P_pred = self.A_est @ P @ self.A_est.T + Q
@@ -119,10 +123,11 @@ class KalmanProcessing():
                     y_ref = np.array([y_ref])
 
                 S = self.C_est @ P_pred @ self.C_est.T + R
-                K = P_pred @ self.C_est.T @ np.linalg.inv(S)
+                K = np.linalg.solve(S.T, self.C_est @ P_pred.T).T
 
                 x[:, k] = x_pred + K @ (y_ref - y_pred)
-                P = (np.eye(n) - K @ self.C_est) @ P_pred
+                term = np.eye(n) - K @ self.C_est
+                P = term @ P_pred @ term.T + K @ self.R @ K.T # Forma de Joseph
 
             # No correction
             else:
@@ -131,7 +136,13 @@ class KalmanProcessing():
 
             y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[k]
 
+            Sigma_y[:, :, k] = self.C_est @ P @ self.C_est.T
+            sigma_y[:, k] = np.sqrt(np.diag(Sigma_y[:, :, k]))
+
         self.stateTrajectory = x
         self.outputTrajectory = y
+
+        self.outputCovariance = Sigma_y
+        self.outputStd = sigma_y
 
         return x, y
