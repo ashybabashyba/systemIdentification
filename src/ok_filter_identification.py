@@ -109,7 +109,7 @@ class ObserverKalmanFilterIdentification():
 
         residuals_norm = residuals - np.mean(residuals)
 
-        rho = np.correlate(residuals_norm, residuals_norm, mode='full') 
+        rho = np.correlate(residuals_norm, residuals_norm, mode='full') # Esto puede tener problemas para multiple outputs
         rho_raw = rho[n-1:]
         rho_normalized = rho_raw / rho_raw[0]
 
@@ -197,3 +197,30 @@ class ObserverKalmanFilterIdentification():
         observerGain = np.linalg.lstsq(observabilityMatrix, filterObservability, rcond=None)[0]
 
         return observerGain
+    
+    def estimateNoiseCovariances(self):
+        y2 = self.buildOutputResiduals()  
+        G = self.buildObserverGain()      
+
+        n_states = self.A_est.shape[0]
+        n_outputs, L = y2.shape
+        
+        x2_hat = np.zeros((n_states, 1))
+        innovations = []
+
+        A_obs = self.A_est + G @ self.C_est
+        
+        for k in range(L):
+            y2_k = y2[:, k:k+1]
+            
+            eps_k = y2_k - self.C_est @ x2_hat
+            innovations.append(eps_k)
+            
+            x2_hat = A_obs @ x2_hat - G @ y2_k
+
+        eps_matrix = np.hstack(innovations)
+        
+        R = np.cov(eps_matrix, bias=True)
+        Q = G @ R @ G.T
+        
+        return Q, R
