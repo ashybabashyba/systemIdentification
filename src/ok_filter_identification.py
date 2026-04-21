@@ -1,8 +1,8 @@
 import numpy as np
 from scipy.signal import dlsim
 
-class ObserverKalmanFilterIdentification():
-    def __init__(self, A, B, C, D, initialState, energyThreshold=0.99):
+class ObserverKalmanFilterIdentification:
+    def __init__(self, A, B, C, D, initialState, dataWrapper, energyThreshold=0.99):
         self.A_est = A
         self.B_est = B
         self.C_est = C
@@ -11,100 +11,17 @@ class ObserverKalmanFilterIdentification():
 
         self.energyThreshold = energyThreshold
 
-        self.inputValues             = []
+        self.residuals = dataWrapper.buildOutputResiduals() 
+        self.k_prime = dataWrapper.k_prime
+        self.inputValues = dataWrapper.inputValues
+        self.y_ref_interp = dataWrapper.interpolatedReferenceOutputValues
 
-        self.referenceOutputValues    = []
-        self.interpolatedReferenceOutputValues = []
-
-        self.deterministicOutputValues = []
-        self.interpolatedDeterministicOutputValues = []
-
-        self.inputTimeData  = []
-        self.deterministicOutputTimeData = []
-        self.referenceOutputTimeData = []
-
-    def addInputData(self, inputData, inputTimeData):
-        if len(self.inputValues) == 0:
-            self.inputValues = np.array([inputData])
-        else:
-            self.inputValues = np.vstack((self.inputValues, inputData))
-        
-
-        if len(self.inputTimeData) != 0:
-            if not np.array_equal(self.inputTimeData, inputTimeData):
-                raise ValueError("Input time data must be consistent across calls")
-        else:
-            self.inputTimeData = inputTimeData
-
-    def addDeterministicOutput(self, outputData, outputTimeData):
-        if len(self.deterministicOutputValues) == 0:
-            self.deterministicOutputValues = np.array([outputData])
-        else:
-            self.deterministicOutputValues = np.vstack((self.deterministicOutputValues, outputData))
-
-        
-        if len(self.deterministicOutputTimeData) != 0:
-            if not np.array_equal(self.deterministicOutputTimeData, outputTimeData):
-                raise ValueError("Output time data must be consistent across calls")
-        else:
-            self.deterministicOutputTimeData = outputTimeData
-
-    def addReferenceOutput(self, outputData, outputTimeData):
-        if len(self.referenceOutputValues) == 0:
-            self.referenceOutputValues = np.array([outputData])
-        else:
-            self.referenceOutputValues = np.vstack((self.referenceOutputValues, outputData))
-
-        
-        if len(self.referenceOutputTimeData) != 0:
-            if not np.array_equal(self.referenceOutputTimeData, outputTimeData):
-                raise ValueError("Output time data must be consistent across calls")
-        else:
-            self.referenceOutputTimeData = outputTimeData
-
-    def buildInterpolatedOutputs(self):
-        t_ref_max = self.referenceOutputTimeData[-1]
-        k_prime = np.searchsorted(self.inputTimeData, t_ref_max, side='right') - 1
-        self.k_prime = k_prime
-
-        t_common = self.inputTimeData[:k_prime + 1]
-
-        y_ref = np.array(self.referenceOutputValues)
-        y_det = np.array(self.deterministicOutputValues)
-
-        if y_ref.ndim == 1:
-            y_ref = y_ref.reshape(-1, 1)
-
-        y_ref_interp = []
-        y_det_interp = []
-
-        for i in range(y_ref.shape[0]):
-            y_ref_interp.append(
-                np.interp(
-                    t_common,
-                    self.referenceOutputTimeData,
-                    y_ref[i, :]
-                )
-            )
-
-        for i in range(y_det.shape[0]):
-            y_det_interp.append(
-                np.interp(
-                    t_common,
-                    self.deterministicOutputTimeData,
-                    y_det[i, :]
-                )
-            )
-
-        self.interpolatedReferenceOutputValues = np.vstack(y_ref_interp)
-        self.interpolatedDeterministicOutputValues = np.vstack(y_det_interp)
-
-    def buildOutputResiduals(self):
-        self.buildInterpolatedOutputs()
-
-        return self.interpolatedReferenceOutputValues - self.interpolatedDeterministicOutputValues
+        self.G = None
+        self.Q = None
+        self.R = None
     
-    def buildCorrelationVector(self, residuals):
+    def buildCorrelationVector(self):
+        residuals = self.residuals
         n = len(residuals)
 
         residuals_norm = residuals - np.mean(residuals)
@@ -115,8 +32,8 @@ class ObserverKalmanFilterIdentification():
 
         return rho_normalized
 
-    def energyCriterionForTruncation(self, residuals, order=1):
-        autocorrelationVector = self.buildCorrelationVector(residuals)
+    def energyCriterionForTruncation(self, order=1):
+        autocorrelationVector = self.buildCorrelationVector()
         rho_abs = np.abs(autocorrelationVector)
 
         total_energy = np.sum(rho_abs**order)
@@ -126,7 +43,8 @@ class ObserverKalmanFilterIdentification():
 
         return p
     
-    def buildRegressionMatrix(self, residuals, p):
+    def buildRegressionMatrix(self, p):
+        residuals = self.residuals
         if residuals.ndim == 1:
             residuals = residuals.reshape(1, -1)
             
@@ -146,7 +64,7 @@ class ObserverKalmanFilterIdentification():
         return V2
 
     def buildFilterObservability(self):
-        residuals = self.buildOutputResiduals()
+        residuals = self.residuals
         p = self.energyCriterionForTruncation(residuals)
 
         if residuals.ndim == 1:
@@ -175,7 +93,7 @@ class ObserverKalmanFilterIdentification():
         return filterObservability
     
     def buildObservabilityMatrix(self):
-        residuals = self.buildOutputResiduals()
+        residuals = self.residuals
         p = self.energyCriterionForTruncation(residuals)
 
         n_outputs = self.C_est.shape[0]
@@ -198,9 +116,9 @@ class ObserverKalmanFilterIdentification():
 
         return observerGain
     
-    def estimateNoiseCovariances(self):
-        y2 = self.buildOutputResiduals()  
-        G = self.buildObserverGain()      
+    def estimateNoiseCovariances(self, observerGain):
+        y2 = self.residuals
+        G = observerGain     
 
         n_states = self.A_est.shape[0]
         n_outputs, L = y2.shape
@@ -224,3 +142,71 @@ class ObserverKalmanFilterIdentification():
         Q = G @ R @ G.T
         
         return Q, R
+    
+    def runIdentification(self):
+        self.G = self.buildObserverGain()
+        self.Q, self.R = self.estimateNoiseCovariances(self.G)
+    
+    def evolveWithFilter(self):
+        if self.G is None:
+            self.runIdentification()
+
+        u = np.array(self.inputValues)
+        if u.ndim == 1:
+            u = u.reshape(-1, 1)
+
+        N = u.shape[1]
+        n = self.A_est.shape[0]
+        p = self.C_est.shape[0]
+
+        x = np.zeros((n, N))
+        y = np.zeros((p, N))
+
+        Sigma_y = np.zeros((p, p, N))   # covarianza completa
+        sigma_y = np.zeros((p, N))      # desviación estándar 
+
+        x[:, 0] = self.initialState
+        y[:, 0] = self.C_est @ x[:, 0] + self.D_est @ u[:,0]
+
+        P = np.zeros((n, n))  # El estado inicial está inicializado en cero, por lo que no debería haber incertidumbre inicial
+
+        Sigma_y[:, :, 0] = self.C_est @ P @ self.C_est.T
+        sigma_y[:, 0] = np.sqrt(np.diag(Sigma_y[:, :, 0]))
+
+        for k in range(1, N):
+            x_pred = self.A_est @ x[:, k-1] + self.B_est @ u[:,k-1]
+            P_pred = self.A_est @ P @ self.A_est.T + Q
+
+            y_pred = self.C_est @ x_pred + self.D_est @ u[:,k]
+
+            # Correction step
+            if k <= self.k_prime:
+                y_ref = self.y_ref_interp[:, k]
+
+                if y_ref.ndim == 0:
+                    y_ref = np.array([y_ref])
+
+                S = self.C_est @ P_pred @ self.C_est.T + R
+                K = np.linalg.solve(S.T, (P_pred @ self.C_est.T).T).T
+
+                x[:, k] = x_pred + K @ (y_ref - y_pred)
+                # P = (np.eye(n) - K @ self.C_est) @ P_pred   # Inestable numericamente
+                P = (np.eye(n) - K @ self.C_est) @ P_pred @ (np.eye(n) - K @ self.C_est).T + K @ R @ K.T
+
+            # No correction
+            else:
+                x[:, k] = x_pred
+                P = P_pred
+
+            y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[:,k]
+
+            Sigma_y[:, :, k] = self.C_est @ P @ self.C_est.T
+            sigma_y[:, k] = np.sqrt(np.diag(Sigma_y[:, :, k]))
+
+        self.stateTrajectory = x
+        self.outputTrajectory = y
+
+        self.outputCovariance = Sigma_y
+        self.outputStd = sigma_y
+
+        return x, y
