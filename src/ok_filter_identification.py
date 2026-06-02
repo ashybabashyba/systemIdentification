@@ -15,20 +15,22 @@ class ObserverKalmanFilterIdentification:
         self.k_prime = dataWrapper.k_prime
         self.inputValues = dataWrapper.inputValues
         self.y_ref_interp = dataWrapper.interpolatedReferenceOutputValues
-
-        self.G = None
-        self.Q = None
-        self.R = None
     
     def buildCorrelationVector(self):
-        residuals = self.residuals
-        n = len(residuals)
+        residuals = np.atleast_2d(self.residuals) 
+        n_outputs, L = residuals.shape
 
-        residuals_norm = residuals - np.mean(residuals)
+        residuals_norm = residuals - np.mean(residuals, axis=1, keepdims=True)
 
-        rho = np.correlate(residuals_norm, residuals_norm, mode='full') # Esto puede tener problemas para multiple outputs
-        rho_raw = rho[n-1:]
-        rho_normalized = rho_raw / rho_raw[0]
+        rho_total = np.zeros(L)
+
+        for i in range(n_outputs):
+            channel = residuals_norm[i, :]
+            rho_channel = np.correlate(channel, channel, mode='full')
+            
+            rho_total += rho_channel[L-1:]
+
+        rho_normalized = rho_total / rho_total[0]
 
         return rho_normalized
 
@@ -47,6 +49,8 @@ class ObserverKalmanFilterIdentification:
         residuals = self.residuals
         if residuals.ndim == 1:
             residuals = residuals.reshape(1, -1)
+
+        residuals = residuals[:, :-1]
             
         n_outputs, L = residuals.shape
         V2 = np.zeros((n_outputs*p, L))
@@ -60,22 +64,30 @@ class ObserverKalmanFilterIdentification:
             else:
                 V2[row_start:row_end, i:] = residuals[:, :L-i]
 
-
         return V2
 
     def buildFilterObservability(self):
         residuals = self.residuals
-        p = self.energyCriterionForTruncation(residuals)
+        # p = self.energyCriterionForTruncation(residuals)
 
         if residuals.ndim == 1:
             residuals = residuals.reshape(1, -1)
         n_outputs, L = residuals.shape
+        p = L - 1
 
-        V2 = self.buildRegressionMatrix(residuals, p)
+        V2 = self.buildRegressionMatrix(p)
         y_2 = np.asarray(residuals)
+        y_2 = y_2[:, 1:]
 
-        Y_2_bar = -y_2 @ np.linalg.pinv(V2, rcond=1e-24)
+        U, S, Vt = np.linalg.svd(V2, full_matrices=False)
 
+        tol = S[0] * self.energyThreshold
+    
+        S_inv = np.zeros_like(S)
+        S_inv[S > tol] = 1.0 / S[S > tol]
+
+        Y_2_bar = -y_2 @ (Vt.T @ np.diag(S_inv) @ U.T)
+        # Y_2_bar = -y_2 @ np.linalg.pinv(V2, rcond=1e-24)
 
         Yo_list = []
         Y_bar_blocks = [Y_2_bar[:, i*n_outputs : (i+1)*n_outputs] for i in range(p)]
@@ -94,7 +106,12 @@ class ObserverKalmanFilterIdentification:
     
     def buildObservabilityMatrix(self):
         residuals = self.residuals
-        p = self.energyCriterionForTruncation(residuals)
+        # p = self.energyCriterionForTruncation(residuals)
+
+        if residuals.ndim == 1:
+            residuals = residuals.reshape(1, -1)
+        n_outputs, L = residuals.shape
+        p = L - 1
 
         n_outputs = self.C_est.shape[0]
         r = self.A_est.shape[0]
@@ -116,40 +133,9 @@ class ObserverKalmanFilterIdentification:
 
         return observerGain
     
-    def estimateNoiseCovariances(self, observerGain):
-        y2 = self.residuals
-        G = observerGain     
-
-        n_states = self.A_est.shape[0]
-        n_outputs, L = y2.shape
-        
-        x2_hat = np.zeros((n_states, 1))
-        innovations = []
-
-        A_obs = self.A_est + G @ self.C_est
-        
-        for k in range(L):
-            y2_k = y2[:, k:k+1]
-            
-            eps_k = y2_k - self.C_est @ x2_hat
-            innovations.append(eps_k)
-            
-            x2_hat = A_obs @ x2_hat - G @ y2_k
-
-        eps_matrix = np.hstack(innovations)
-        
-        R = np.cov(eps_matrix, bias=True)
-        Q = G @ R @ G.T
-        
-        return Q, R
-    
-    def runIdentification(self):
-        self.G = self.buildObserverGain()
-        self.Q, self.R = self.estimateNoiseCovariances(self.G)
-    
     def evolveWithFilter(self):
-        if self.G is None:
-            self.runIdentification()
+        G = self.buildObserverGain()
+        A_cl = self.A_est - G @ self.C_est 
 
         u = np.array(self.inputValues)
         if u.ndim == 1:
@@ -162,49 +148,58 @@ class ObserverKalmanFilterIdentification:
         x = np.zeros((n, N))
         y = np.zeros((p, N))
 
-        Sigma_y = np.zeros((p, p, N))   # covarianza completa
-        sigma_y = np.zeros((p, N))      # desviación estándar 
+        Sigma_y = np.zeros((p, p, N))   
+        sigma_y = np.zeros((p, N))      
 
         x[:, 0] = self.initialState
         y[:, 0] = self.C_est @ x[:, 0] + self.D_est @ u[:,0]
 
-        P = np.zeros((n, n))  # El estado inicial está inicializado en cero, por lo que no debería haber incertidumbre inicial
+        if hasattr(self, 'residuals') and self.residuals.shape[1] > 1:
+            Sigma_residual = np.cov(self.residuals[:, :self.k_prime])
+            if Sigma_residual.ndim == 0:
+                Sigma_residual = np.array([[Sigma_residual]])
+        else:
+            error_base = np.var(self.y_ref_interp[:, :self.k_prime] - y[:, :1])
+            Sigma_residual = error_base * np.eye(p)
 
-        Sigma_y[:, :, 0] = self.C_est @ P @ self.C_est.T
+        P_estado_train = G @ Sigma_residual @ G.T
+        P = P_estado_train.copy()
+        
+        Sigma_y[:, :, 0] = self.C_est @ P @ self.C_est.T + Sigma_residual
         sigma_y[:, 0] = np.sqrt(np.diag(Sigma_y[:, :, 0]))
 
         for k in range(1, N):
             x_pred = self.A_est @ x[:, k-1] + self.B_est @ u[:,k-1]
-            P_pred = self.A_est @ P @ self.A_est.T + Q
-
             y_pred = self.C_est @ x_pred + self.D_est @ u[:,k]
 
-            # Correction step
+            Q_subspace = G @ Sigma_residual @ G.T
+
             if k <= self.k_prime:
                 y_ref = self.y_ref_interp[:, k]
-
                 if y_ref.ndim == 0:
                     y_ref = np.array([y_ref])
 
-                S = self.C_est @ P_pred @ self.C_est.T + R
-                K = np.linalg.solve(S.T, (P_pred @ self.C_est.T).T).T
+                innovation = y_ref - y_pred
+                x[:, k] = x_pred - G @ innovation
+                y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[:,k] + innovation
 
-                x[:, k] = x_pred + K @ (y_ref - y_pred)
-                # P = (np.eye(n) - K @ self.C_est) @ P_pred   # Inestable numericamente
-                P = (np.eye(n) - K @ self.C_est) @ P_pred @ (np.eye(n) - K @ self.C_est).T + K @ R @ K.T
+                P_pred = self.A_est @ P @ self.A_est.T + Q_subspace
+                I_GC = np.eye(n) + G @ self.C_est
+                P = I_GC @ P_pred @ I_GC.T + G @ Sigma_residual @ G.T
+                
+                Sigma_y[:, :, k] = Sigma_residual
 
-            # No correction
             else:
                 x[:, k] = x_pred
-                P = P_pred
+                y[:, k] = y_pred
+                
+                P = self.A_est @ P @ self.A_est.T + Q_subspace
+                
+                Sigma_y[:, :, k] = self.C_est @ P @ self.C_est.T + Sigma_residual
 
-            y[:, k] = self.C_est @ x[:, k] + self.D_est @ u[:,k]
-
-            Sigma_y[:, :, k] = self.C_est @ P @ self.C_est.T
-            sigma_y[:, k] = np.sqrt(np.diag(Sigma_y[:, :, k]))
-
-        self.stateTrajectory = x
-        self.outputTrajectory = y
+            diags = np.diag(Sigma_y[:, :, k]).copy()
+            diags[diags < 0] = 0.0
+            sigma_y[:, k] = np.sqrt(diags)
 
         self.outputCovariance = Sigma_y
         self.outputStd = sigma_y

@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 try:
     from sippy_unipi import system_identification
     from src.system_identification_wrapper import SystemIdentificationWrapper
+    from src.ok_filter_identification import ObserverKalmanFilterIdentification
+    from src.filter_identification_wrapper import FilterIdentificationWrapper
 except ImportError:
     import os
     import sys
@@ -14,6 +16,11 @@ except ImportError:
     from sippy_unipi import system_identification
     from system_identification_wrapper import SystemIdentificationWrapper
     from system_identification import StateSpace
+    from kalman_filters import KalmanProcessing
+
+    from ok_filter_identification import ObserverKalmanFilterIdentification
+    from filter_identification_wrapper import FilterIdentificationWrapper
+
 
 from sippy_unipi import functionset as fset
 from sippy_unipi import functionsetSIM as fsetSIM
@@ -532,4 +539,140 @@ for method_name, errs in errors.items():
     print(f"Errores L2 normalizados para {method_name}:")
     for i, (start, end) in enumerate(intervals):
         print(f"  Intervalo {start:.0f}-{end:.0f} ns: {errs[i]:.2e}")
+# %%
+
+step = 0.01e-9
+initialTrainingTime = 0
+finalTrainingTime = 20e-9
+newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
+
+data = np.load("large_gaussian_data.npz")
+
+time_input = data["time_input"]
+input_signal = data["input_signal"]
+time_output_raw = data["time_output"]
+output_signal_raw = data["output_signal"]
+
+system = SystemIdentificationWrapper(
+    timeInput=time_input,
+    timeOutput=newTimeVector
+)
+
+system.addInputData(input_signal)
+system.buildInterpolatedInputValues()
+
+system.addOutputData(
+    np.interp(newTimeVector, time_output_raw, output_signal_raw)
+)
+stateSpace = StateSpace(systemInput = system.interpolatedInputValues[0],
+                        systemOutput = system.outputValues)
+
+A, B, C, D, initialState = stateSpace.buildStateSpaceSystem()
+
+# %%
+
+finalTime = np.arange(0, 45e-9 + step, step)
+finalOutput = np.interp(
+    finalTime,
+    data["time_output"],
+    data["output_signal"]
+).reshape((1, -1))
+
+# input
+finalInput = np.interp(
+    finalTime,
+    data["time_input"],
+    data["input_signal"]
+).reshape((1, -1))
+
+x_id_predicted, y_id_predicted = stateSpace.evolveInput(A=A, B=B, C=C, D=D, u=finalInput[0], x0=initialState)
+
+# kalmanSystem = KalmanProcessing(A=A, B=B, C=C, D=D, initialState=initialState)
+# kalmanSystem.setKalmanProcessNoise()
+# kalmanSystem.setKalmanMeasurementNoise()
+
+# kalmanSystem.addInputData(finalInput[0], finalTime)
+
+# for i in range(system.outputValues.shape[0]):
+#     kalmanSystem.addReferenceOutput(system.outputValues[i], newTimeVector)
+
+# x_kalman, y_kalman = kalmanSystem.evolveWithKalmanFilter()
+
+
+data_wrapper = FilterIdentificationWrapper()
+data_wrapper.addInputData(finalInput[0], finalTime)
+for i in range(system.outputValues.shape[0]):
+    data_wrapper.addReferenceOutput(system.outputValues[i], newTimeVector)
+
+for i in range(y_id_predicted.shape[0]):
+    data_wrapper.addDeterministicOutput(y_id_predicted[i], finalTime)
+
+observer = ObserverKalmanFilterIdentification(
+    A=A, B=B, C=C, D=D, 
+    initialState=initialState, 
+    dataWrapper=data_wrapper,
+    energyThreshold=1-1e-6
+)
+x_kalman, y_kalman = observer.evolveWithFilter()
+
+# %%
+
+y_k = np.array(y_kalman).reshape(observer.C_est.shape[0], -1)
+y_id = np.array(y_id_predicted).reshape(observer.C_est.shape[0], -1) 
+
+t = finalTime
+k_prime = observer.k_prime
+esfuerzo_instantaneo = np.abs(y_k[0, :] - y_id[0, :])
+
+
+plt.plot(t * 1e9, esfuerzo_instantaneo, 'purple', label='|y_kalman - y_id_predicted|')
+plt.fill_between(t[:k_prime] * 1e9, esfuerzo_instantaneo[:k_prime], color='purple', alpha=0.2, label='Zona de Estrés Estructural')
+plt.xlabel('Tiempo (ns)')
+plt.ylabel('Magnitud del Esfuerzo de G')
+plt.legend()
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+# %%
+
+output_index = 0
+
+
+plt.plot(finalTime,    finalOutput[output_index], label='Original output', linewidth=2, color='black')
+plt.plot(finalTime, y_id_predicted[output_index], '-.', label='Predicted with SSSI')
+plt.plot(finalTime,       y_kalman[output_index], '--', label='Reconstructed with observer correction')
+plt.fill_between(
+    finalTime,
+    y_kalman[output_index] - observer.outputStd[output_index],
+    y_kalman[output_index] + observer.outputStd[output_index],
+    alpha=0.2
+)
+plt.vlines(x=[initialTrainingTime, finalTrainingTime], ymin=-0.007, ymax=0.017, colors='gray', linestyles='--', label='Training interval')
+plt.xlabel('Time')
+plt.ylim(-0.007, 0.017)
+plt.xlim(10e-9, 20e-9)
+# plt.ylim(np.min(finalOutput[output_index])*3.5, np.max(finalOutput[output_index])*3.5)
+plt.legend()
+plt.grid()
+plt.show()
+# %%
+G = observer.buildObserverGain()
+
+#%%
+max_pow = 50
+potencias = range(1, max_pow + 1)
+radios_espectrales = [np.max(np.abs(np.linalg.eigvals(np.linalg.matrix_power(A - G @C, k)))) for k in potencias]
+
+# Plotear
+plt.figure(figsize=(7, 4))
+plt.plot(potencias, radios_espectrales, 'b-o', markersize=4, label=r'$\rho((A+GC)^k)$')
+plt.axhline(y=1.0, color='r', linestyle='--', label='Límite de estabilidad (1.0)')
+plt.xlabel('Potencia ($k$)')
+plt.ylabel('Radio Espectral / Magnitud')
+plt.title('Evolución de las potencias de la matriz de lazo cerrado')
+plt.grid(True, linestyle=':')
+plt.legend()
+plt.show()
 # %%
