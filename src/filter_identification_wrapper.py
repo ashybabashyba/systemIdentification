@@ -13,6 +13,11 @@ class FilterIdentificationWrapper:
         self.inputTimeData  = []
         self.deterministicOutputTimeData = []
         self.referenceOutputTimeData = []
+        
+        self.t_training = None
+        self.t_control = None
+        self.k_prime = None
+        self.k_prime_ctrl = None
 
     def addInputData(self, inputData, inputTimeData):
         if len(self.inputValues) == 0:
@@ -53,12 +58,41 @@ class FilterIdentificationWrapper:
         else:
             self.referenceOutputTimeData = outputTimeData
 
-    def buildInterpolatedOutputs(self):
+    def setTimeWindow(self, t_training, t_control):
+        """Set training and control time windows with validation.
+        
+        Args:
+            t_training: End time of training period
+            t_control: End time of control/validation period
+            
+        Raises:
+            ValueError: If reference data does not extend to at least t_control
+        """
+        if len(self.referenceOutputTimeData) == 0:
+            raise ValueError("Reference output data must be added before setting time windows")
+        
         t_ref_max = self.referenceOutputTimeData[-1]
-        k_prime = np.searchsorted(self.inputTimeData, t_ref_max, side='right') - 1
-        self.k_prime = k_prime
+        if t_ref_max < t_control:
+            raise ValueError(
+                f"Reference output time data must extend to at least t_control ({t_control}), "
+                f"but only extends to {t_ref_max}"
+            )
+        
+        self.t_training = t_training
+        self.t_control = t_control
 
-        t_common = self.inputTimeData[:k_prime + 1]
+    def buildInterpolatedOutputs(self):
+        # Validate that time windows have been set
+        if self.t_training is None or self.t_control is None:
+            raise ValueError("Time windows must be set using setTimeWindow() before calling buildInterpolatedOutputs()")
+        
+        # Calculate k_prime and k_prime_ctrl from specified time windows
+        self.k_prime = np.searchsorted(self.inputTimeData, self.t_training, side='right') - 1
+        self.k_prime_ctrl = np.searchsorted(self.inputTimeData, self.t_control, side='right') - 1
+
+        # Use the maximum index for interpolation
+        k_max = max(self.k_prime, self.k_prime_ctrl)
+        t_common = self.inputTimeData[:k_max + 1]
 
         y_ref = np.array(self.referenceOutputValues)
         y_det = np.array(self.deterministicOutputValues)
