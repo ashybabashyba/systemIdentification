@@ -38,7 +38,7 @@ output_signal_raw = data["output_signal"]
 
 ## ------------ OPTIONAL: NUMERICAL NOISE ------------ ##
 
-noise_level = 0.5  
+noise_level = 0.5
 sigma_signal = np.std(output_signal_raw)
 sigma_noise = noise_level * sigma_signal
 
@@ -69,8 +69,11 @@ Wn = fc / f_nyquist
 
 b, a = signal.butter(4, Wn, btype='low')
 
-input_signal = signal.filtfilt(b, a, input_signal)
-output_signal_noisy = signal.filtfilt(b, a, output_signal_noisy)
+u_detrend = signal.detrend(input_signal)
+y_detrend = signal.detrend(output_signal_noisy)
+
+input_signal = signal.filtfilt(b, a, u_detrend)
+output_signal_noisy = signal.filtfilt(b, a, y_detrend)
 
 # %%
 
