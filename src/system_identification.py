@@ -7,13 +7,13 @@ from scipy.linalg import schur
 from scipy.signal import dlsim
 
 class StateSpace:
-    def __init__(self, systemInput, systemOutput, truncationThreshold = 1e-9, observabilityMethod='Projection'):
+    def __init__(self, systemInput, systemOutput, energy_threshold = 1-1e-9, observabilityMethod='Projection'):
         self.systemOutput = systemOutput
         self.systemInput  = systemInput
 
         # self.systemOutputDetendred, self.D_est = self.detrendedOutput()
 
-        self.truncationThreshold = truncationThreshold
+        self.energy_threshold = energy_threshold
         self.numberOfOutputs = systemOutput.shape[0]
 
         self.observabilityMethod = observabilityMethod
@@ -64,9 +64,15 @@ class StateSpace:
     def buildInputHankelMatrix(self):
         return self.buildHankelMatrix(self.systemInput)
     
+    def cumulativeEnergyTruncation(self, eigenvalues):
+        cumulative_energy = np.cumsum(eigenvalues**2) / np.sum(eigenvalues**2)
+        r = np.argmax(cumulative_energy >= self.energy_threshold) + 1
+
+        return max(r, 2)
+    
     def buildTruncatedSVD(self, matrix):
         U, S, Vh = np.linalg.svd(matrix, full_matrices=False)
-        r = np.sum(S > self.truncationThreshold*S[0])
+        r = self.cumulativeEnergyTruncation(S)
 
         return U[:, :r], S[:r], Vh[:r, :]
 
@@ -107,7 +113,7 @@ class StateSpace:
     
     def buildProjectionOperators(self, HankelInput):
         _, S, Vh = np.linalg.svd(HankelInput, full_matrices=False)
-        r = np.sum(S > self.truncationThreshold*S[0])
+        r = self.cumulativeEnergyTruncation(S)
 
         orthogonal_operator = Vh[r:, :].T @ Vh[r:, :]
         parallel_operator = Vh[:r, :].T @ Vh[:r, :]
@@ -147,7 +153,8 @@ class StateSpace:
         omega2 = observabilityMatrix[self.numberOfOutputs:, :]
 
         A, _, _, _ = np.linalg.lstsq(omega1, omega2, rcond=None)
-        A = stabilize_schur_smooth(A)
+        if np.max(np.abs(np.linalg.eigvals(A))) >= 1:
+            A = stabilize_schur_smooth(A)
 
         C, _, _, _ = np.linalg.lstsq(A.T, observabilityMatrix[self.numberOfOutputs:2*self.numberOfOutputs, :].T, rcond=None)
         C = np.asarray(C).reshape(self.numberOfOutputs, A.shape[0])
@@ -187,35 +194,30 @@ class StateSpace:
 
         return Omega_rows, Womega
     
-    def build_B_D_matrices(self, A, C, initialState):
+    def build_B_D_X0_matrices(self, A, C):
         Omega_rows, Womega = self.buildWeightedObserability(A, C)
-        M, N = self.systemOutput.shape
-        Y = self.systemOutput.reshape(-1, order="F")
-
-        if not np.any(initialState):
-            RHS = Y
-        else:
-            RHS = Y - Omega_rows @ initialState
-
+        
         W_D = Womega[:, :self.numberOfOutputs]
         W_B = Womega[:, self.numberOfOutputs:]
+        
+        Y = self.systemOutput.reshape(-1, order="F")
+        Regression_Matrix = np.hstack((Omega_rows, W_D, W_B))
 
-        D = np.linalg.lstsq(W_D, RHS, rcond=None)[0].reshape((self.numberOfOutputs, 1))
+        theta, _, _, _ = np.linalg.lstsq(Regression_Matrix, Y, rcond=None)
 
-        RHS_B = RHS - (W_D @ D).ravel()
-        B = np.linalg.lstsq(W_B, RHS_B, rcond=None)[0].reshape((A.shape[0], 1))
+        nx = A.shape[0]          
+        ny = self.numberOfOutputs 
 
-        # theta, _, _, _ = np.linalg.lstsq(Womega, RHS, rcond=None)
-        # D = theta[:self.numberOfOutputs].reshape((self.numberOfOutputs, 1))
-        # B = theta[self.numberOfOutputs:].reshape((A.shape[0], 1))
+        initialState = theta[:nx].reshape((nx,))
+        D = theta[nx : nx + ny].reshape((ny, 1))
+        B = theta[nx + ny :].reshape((nx, 1))
 
-
-        return B, D
+        return B, D, initialState
     
     def buildStateSpaceSystem(self):
-        observabilityMatrix, initialState = self.buildObservability_and_InitialState()
+        observabilityMatrix, _ = self.buildObservability_and_InitialState()
         A, C = self.build_A_C_matrices(observabilityMatrix)
-        B, D = self.build_B_D_matrices(A, C, initialState)
+        B, D, initialState = self.build_B_D_X0_matrices(A, C)
 
         return A, B, C, D, initialState
     
@@ -223,14 +225,6 @@ class StateSpace:
     def evolveInput(self, A, B, C, D, u, x0):
         system = (A, B, C, D, 1.0)
         t, y, x = dlsim(system, u, x0=x0)
-
-        # if u.ndim == 1:
-        #     u = u.reshape(1, u.shape[0])
-
-        # if self.D_est.shape[0] == 1 and self.D_est.shape[1] == 1:
-        #     y = y + self.D_est * u
-        # else:
-        #     y = y + u.T @ self.D_est.T
         
         return x, y.T 
     

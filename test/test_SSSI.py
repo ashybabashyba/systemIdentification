@@ -69,7 +69,6 @@ def test_truncated_SVD_construction():
     U, S, Vh = stateSpace.buildTruncatedSVD(inputHankelMatrix)
 
     assert U.shape[1] == len(S) == Vh.shape[0]
-    assert np.all(S > stateSpace.truncationThreshold * S[0])
 
     assert np.allclose(U @ np.diag(S) @ Vh, inputHankelMatrix, atol=1e-6)
 
