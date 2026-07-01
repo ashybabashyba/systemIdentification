@@ -2,21 +2,18 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-try:
-    from sippy_unipi import system_identification
-    from src.system_identification_wrapper import SystemIdentificationWrapper
-except ImportError:
-    import os
-    import sys
+import os
+import sys
 
-    sys.path.append(os.pardir)
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../../', 'src'))
-    from sippy_unipi import system_identification
-    from system_identification_wrapper import SystemIdentificationWrapper
-    from system_identification import StateSpace
+src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../", "src"))
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
-from sippy_unipi import functionset as fset
-from sippy_unipi import functionsetSIM as fsetSIM
+from hankel_dmd_control import Hankel_DMDc
+from sippy_unipi import system_identification
+from system_identification_wrapper import SystemIdentificationWrapper
+from system_identification import StateSpace
+
 
 # %%
 step = 0.01e-3
@@ -320,6 +317,23 @@ stateSpace_Projection = StateSpace(systemInput = system_Projection.interpolatedI
 
 A_Projection, B_Projection, C_Projection, D_Projection, initialState_Projection = stateSpace_Projection.buildStateSpaceSystem()
 
+## Defining system for Hankel-DMDc method ##
+
+system_HankelDMDc = SystemIdentificationWrapper(timeInput=np.loadtxt(trainingFile, usecols=0, skiprows=1),
+                                                timeOutput=newTimeVector)
+
+system_HankelDMDc.addInputData(np.loadtxt(trainingFile, usecols=1, skiprows=1))
+system_HankelDMDc.buildInterpolatedInputValues()
+system_HankelDMDc.addOutputData(np.interp(newTimeVector, 
+                                          np.loadtxt(trainingFile, skiprows=1, usecols=0), 
+                                          np.loadtxt(trainingFile, skiprows=1, usecols=2)))
+
+hdmdc_instance = Hankel_DMDc(systemInput=system_HankelDMDc.interpolatedInputValues[0],
+                             systemOutput=system_HankelDMDc.outputValues,
+                             energyThreshold=1-1e-9)
+
+A_hat, B_hat = hdmdc_instance.compute_AB_hat()
+
 
 ## Evolving systems  ##
 
@@ -336,16 +350,17 @@ _, y_id_predicted_Naishadham = stateSpace_Naishadham.evolveInput(A=A_Naishadham,
 _, y_id_predicted_Juang = stateSpace_Juang.evolveInput(A=A_Juang, B=B_Juang, C=C_Juang, D=D_Juang, u=finalInput[0], x0=initialState_Juang)
 _, y_id_predicted_Projection = stateSpace_Projection.evolveInput(A=A_Projection, B=B_Projection, C=C_Projection, D=D_Projection, u=finalInput[0], x0=initialState_Projection)
 
+y_id_predicted_HankelDMDc = hdmdc_instance.evolve_Hankel_DMDc(A_hat=A_hat, B_hat=B_hat, u_completo=finalInput[0])
 
 ## Plotting results ##
 
 fig, axs = plt.subplots(1, 1, figsize=(10, 8))
 
 # Colores y marcadores consistentes
-colors = ['k', 'C0', 'C2', 'C3']
-markers = [None, 'o', 's', '^']
+colors = ['k', 'C0', 'C2', 'C3', 'C4']
+markers = [None, 'o', 's', '^', 'v']
 labels = ['Original Output', 'Naishadham\'s method', 
-          'Juang\'s method', 'Projection method [this work]']
+          'Juang\'s method', 'Projection method [this work]', 'Hankel-DMDc method']
 
 fontsize_axes = 14     # números de los ejes
 fontsize_labels = 16   # xlabel / ylabel
@@ -359,6 +374,8 @@ axs.plot(finalTime*1e3, y_id_predicted_Juang[0]*1e6, '--'+markers[2],
             color=colors[2], markersize=6, markevery=15, markerfacecolor='none', label=labels[2])
 axs.plot(finalTime*1e3, y_id_predicted_Projection[0]*1e6, '--'+markers[3], 
             color=colors[3], markersize=6, markevery=15, markerfacecolor='none', label=labels[3])
+axs.plot(finalTime*1e3, y_id_predicted_HankelDMDc[0]*1e6, '--'+markers[4], 
+            color=colors[4], markersize=6, markevery=15, markerfacecolor='none', label=labels[4])
 
 axs.axvspan(initialTrainingTime*1e3, finalTrainingTime*1e3, alpha=0.3)
 axs.set_xlabel('Time (ms)', fontsize=fontsize_labels)

@@ -2,21 +2,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-try:
-    from sippy_unipi import system_identification
-    from src.system_identification_wrapper import SystemIdentificationWrapper
-except ImportError:
-    import os
-    import sys
+import os
+import sys
 
-    sys.path.append(os.pardir)
-    sys.path.append(os.path.join(os.path.dirname(__file__), '../../', 'src'))
-    from sippy_unipi import system_identification
-    from system_identification_wrapper import SystemIdentificationWrapper
-    from system_identification import StateSpace
+src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../", "src"))
+if src_dir not in sys.path:
+    sys.path.append(src_dir)
 
-from sippy_unipi import functionset as fset
-from sippy_unipi import functionsetSIM as fsetSIM
+from hankel_dmd_control import Hankel_DMDc
+from sippy_unipi import system_identification
+from system_identification_wrapper import SystemIdentificationWrapper
+from system_identification import StateSpace
 
 
 # %% State Space Identfication using Naishadham(2016) and Juang (1997) method
@@ -314,11 +310,11 @@ plt.show()
 
 step = 0.01e-9
 initialTrainingTime = 0
-finalTrainingTime = 20e-9
+finalTrainingTime = 22e-9
 newTimeVector = np.arange(initialTrainingTime, finalTrainingTime + step, step)
 
 initialTrainingTime_Naishadham = 0e-9
-finalTrainingTime_Naishadham = 20e-9
+finalTrainingTime_Naishadham = 22e-9
 newTimeVector_Naishadham = np.arange(initialTrainingTime_Naishadham, finalTrainingTime_Naishadham + step, step)
 
 
@@ -390,6 +386,22 @@ stateSpace_Projection = StateSpace(systemInput = system_Projection.interpolatedI
 
 A_Projection, B_Projection, C_Projection, D_Projection, initialState_Projection = stateSpace_Projection.buildStateSpaceSystem()
 
+## Defining system for Hankel-DMDc method ##
+
+system_HankelDMDc = SystemIdentificationWrapper(timeInput=time_input,
+                                                timeOutput=newTimeVector)
+
+system_HankelDMDc.addInputData(input_signal)
+system_HankelDMDc.buildInterpolatedInputValues()
+system_HankelDMDc.addOutputData(
+    np.interp(newTimeVector, time_output_raw, output_signal_raw)
+)
+
+hdmdc_instance = Hankel_DMDc(systemInput=system_HankelDMDc.interpolatedInputValues[0],
+                             systemOutput=system_HankelDMDc.outputValues,
+                             energyThreshold=1-1e-9)
+
+A_hat, B_hat = hdmdc_instance.compute_AB_hat()
 
 ## Evolving systems  ##
 
@@ -410,24 +422,27 @@ _, y_id_predicted_Naishadham = stateSpace_Naishadham.evolveInput(A=A_Naishadham,
 _, y_id_predicted_Juang = stateSpace_Juang.evolveInput(A=A_Juang, B=B_Juang, C=C_Juang, D=D_Juang, u=finalInput[0], x0=initialState_Juang)
 _, y_id_predicted_Projection = stateSpace_Projection.evolveInput(A=A_Projection, B=B_Projection, C=C_Projection, D=D_Projection, u=finalInput[0], x0=initialState_Projection)
 
+y_id_predicted_HankelDMDc = hdmdc_instance.evolve_Hankel_DMDc(A_hat=A_hat, B_hat=B_hat, u_completo=finalInput[0])
 
 # %%
 ## Plotting results ##
 
-colors = ['k', 'C0', 'C2', 'C3']
-markers = [None, 'o', 's', '^']
+colors = ['k', 'C0', 'C2', 'C3', 'C4']
+markers = [None, 'o', 's', '^', 'v']
 labels = ['FDTD simulation', 
           'Naishadham\'s method', 
           'Juang\'s method', 
-          'Projection method [this work]']
+          'Projection method [this work]', 
+          'Hankel-DMDc method']
 
-fig, axs = plt.subplots(3, 1, figsize=(6, 8))
+fig, axs = plt.subplots(4, 1, figsize=(6, 8))
 
 time_ns = finalTime*1e9 
 original = finalOutput[0]*1e3 
 naishadham = y_id_predicted_Naishadham[0]*1e3  
 juang = y_id_predicted_Juang[0]*1e3  
-projection = y_id_predicted_Projection[0]*1e3  
+projection = y_id_predicted_Projection[0]*1e3 
+hankel_dmdc = y_id_predicted_HankelDMDc[0]*1e3 
 
 # -------------------------
 # 1️⃣ Original vs Naishadham
@@ -458,8 +473,21 @@ axs[1].legend()
 # -------------------------
 # 3️⃣ Original vs Projection
 # -------------------------
+axs[3].plot(time_ns, original, color=colors[0], linewidth=2, label=labels[0])
+axs[3].plot(time_ns, projection, color=colors[3], label=labels[3])
+axs[3].grid()
+axs[3].axvspan(
+    initialTrainingTime*1e9,
+    finalTrainingTime*1e9,
+    alpha=0.2
+)
+axs[3].legend()
+
+# -------------------------
+# 4️⃣ Original vs Hankel-DMDc
+# -------------------------
 axs[2].plot(time_ns, original, color=colors[0], linewidth=2, label=labels[0])
-axs[2].plot(time_ns, projection, color=colors[3], label=labels[3])
+axs[2].plot(time_ns, hankel_dmdc, color=colors[4], label=labels[4])
 axs[2].grid()
 axs[2].axvspan(
     initialTrainingTime*1e9,
@@ -491,10 +519,13 @@ plt.plot(time_ns, juang, '--s', color=colors[2],
 plt.plot(time_ns, projection, '--^', color=colors[3],
               markersize=8, markevery=27, markerfacecolor='none',
               label=labels[3])
+plt.plot(time_ns, hankel_dmdc, '--v', color=colors[4],
+              markersize=8, markevery=29, markerfacecolor='none',
+              label=labels[4])
 
 
-plt.xlim(32, 36)
-mask = (finalTime >= 32e-9) & (finalTime <= 36e-9)
+plt.xlim(34, 36)
+mask = (finalTime >= 34e-9) & (finalTime <= 36e-9)
 y_zoom = original[mask]
 plt.ylim(min(y_zoom)-0.5, max(y_zoom)+0.5)
 
@@ -513,7 +544,8 @@ intervals = [(0, 10), (10, 20), (20, 30), (30, 45), (0, 45)]
 methods = {
     "Naishadham": naishadham,
     "Juang": juang,
-    "Projection": projection
+    "Projection": projection,
+    "Hankel-DMDc": hankel_dmdc
 }
 
 def l2_normalized_error(y_true, y_pred):

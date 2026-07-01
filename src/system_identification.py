@@ -3,12 +3,11 @@ import matplotlib.pyplot as plt
 from scipy.linalg import schur
 
 class StateSpace:
-    def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-6, observabilityMethod='Projection'):
+    def __init__(self, systemInput, systemOutput, energyThreshold=1-1e-9, observabilityMethod='Projection'):
         self.systemInput  = systemInput
         self.systemOutput = systemOutput
 
         self.energyThreshold = energyThreshold
-        self.truncationThreshold = 1e-9
         self.numberOfOutputs = systemOutput.shape[0]
 
         self.observabilityMethod = observabilityMethod
@@ -41,9 +40,15 @@ class StateSpace:
     def buildInputHankelMatrix(self):
         return self.buildHankelMatrix(self.systemInput)
     
+    def cumulativeEnergyTruncation(self, eigenvalues):
+        cumulative_energy = np.cumsum(eigenvalues**2) / np.sum(eigenvalues**2)
+        r = np.argmax(cumulative_energy >= self.energyThreshold) + 1
+
+        return max(r, 2)
+    
     def buildTruncatedSVD(self, matrix):
         U, S, Vh = np.linalg.svd(matrix, full_matrices=False)
-        r = np.sum(S > self.truncationThreshold*S[0])
+        r = self.cumulativeEnergyTruncation(S)
 
         return U[:, :r], S[:r], Vh[:r, :]
 
@@ -84,7 +89,7 @@ class StateSpace:
     
     def buildProjectionOperators(self, HankelInput):
         _, S, Vh = np.linalg.svd(HankelInput, full_matrices=False)
-        r = np.sum(S > self.truncationThreshold*S[0])
+        r = self.cumulativeEnergyTruncation(S)
 
         orthogonal_operator = Vh[r:, :].T @ Vh[r:, :]
         parallel_operator = Vh[:r, :].T @ Vh[:r, :]
