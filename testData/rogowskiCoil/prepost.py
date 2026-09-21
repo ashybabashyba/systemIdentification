@@ -122,7 +122,7 @@ plt.show()
 
 # %% Prediction with the previous parameters
 
-finalTime = np.arange(0, 90e-9 + step, step)
+finalTime = np.arange(0, 45e-9 + step, step)
 finalOutput = np.interp(
     finalTime,
     data["time_output"],

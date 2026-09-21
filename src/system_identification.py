@@ -11,33 +11,17 @@ class StateSpace:
         self.systemOutput = systemOutput
         self.systemInput  = systemInput
 
-        # self.systemOutputDetendred, self.D_est = self.detrendedOutput()
-
         self.energy_threshold = energy_threshold
         self.numberOfOutputs = systemOutput.shape[0]
+
+        if self.systemInput.ndim == 1:
+            self.systemInput = self.systemInput.reshape(1, -1)
+        self.numberOfInputs = self.systemInput.shape[0]
 
         self.observabilityMethod = observabilityMethod
 
         if self.observabilityMethod not in ['Naishadham', 'Juang', 'Projection']:
             raise ValueError("Invalid observability method. Choose 'Naishadham', 'Juang', or 'Projection'.")
-        
-    def detrendedOutput(self):
-        data = self.systemInput
-        if data.ndim == 1:
-            data = data.reshape(1, data.shape[0])
-
-        U_T = data.T
-        Y_T = self.systemOutput.T
-
-        D_est_T = np.linalg.lstsq(U_T, Y_T, rcond=None)[0]  # m x p
-        D_est = D_est_T.T
-
-        if D_est.shape[0] == 1 and D_est.shape[1] == 1:
-            Y_tilde = self.systemOutput - D_est * data
-        else:
-            Y_tilde = self.systemOutput - D_est @ data
-
-        return Y_tilde, D_est
 
     def buildHankelMatrix(self, data):
         if data.ndim == 1:
@@ -131,7 +115,8 @@ class StateSpace:
         U_parallel = self.buildObservability_Juang(Hu @ parallel_operator, Hy @ parallel_operator)
         U_combined = np.hstack((U_parallel, U_orthogonal))
 
-        return self.buildTruncatedSVD(U_combined)[0]
+        # return self.buildTruncatedSVD(U_combined)[0]
+        return U_combined
     
     def buildObservability_and_InitialState(self):
         if self.observabilityMethod == 'Naishadham':
@@ -163,66 +148,97 @@ class StateSpace:
     
     def buildWeightedObserability(self, A, C):
         r = A.shape[0]
-        M, N = self.systemOutput.shape
+        _, N = self.systemOutput.shape
         n_out = self.numberOfOutputs
+        n_in = self.numberOfInputs
 
         Omega_rows = np.zeros((n_out * N, r))
+        CA_powers = []
         
         current_CA = C
         for k in range(N):
             Omega_rows[k*n_out : (k+1)*n_out, :] = current_CA
-            current_CA = current_CA @ A  
+            CA_powers.append(current_CA)
+            current_CA = current_CA @ A
 
-        Womega = np.zeros((n_out * N, n_out + r))
+        # Fast path: preserve previous speed/behavior for single-input systems.
+        if n_in == 1:
+            Womega = np.zeros((n_out * N, n_out + r))
 
-        inputs_expanded = np.repeat(self.systemInput, n_out).reshape(-1, 1)
-        Womega[:, :n_out] = np.tile(np.eye(n_out), (N, 1)) * inputs_expanded
+            u_scalar = self.systemInput[0, :]
+            inputs_expanded = np.repeat(u_scalar, n_out).reshape(-1, 1)
+            Womega[:, :n_out] = np.tile(np.eye(n_out), (N, 1)) * inputs_expanded
 
-        if n_out == 1:
-            input_steps = np.zeros((N, N))
-            for i in range(1, N):
-                input_steps[i, :i] = self.systemInput[:i][::-1]
-            
-            Womega[:, n_out:] = input_steps @ Omega_rows
-        else:
-            for k in range(1, N):
-                past_w = self.systemInput[:k][::-1]
-                CA_blocks = Omega_rows[:k*n_out].reshape(k, n_out, r)
-                block = np.tensordot(past_w, CA_blocks, axes=(0, 0))
+            if n_out == 1:
+                input_steps = np.zeros((N, N))
+                for i in range(1, N):
+                    input_steps[i, :i] = u_scalar[:i][::-1]
 
-                Womega[k*n_out:(k+1)*n_out, n_out:] = block
+                Womega[:, n_out:] = input_steps @ Omega_rows
+            else:
+                for k in range(1, N):
+                    past_w = u_scalar[:k][::-1]
+                    CA_blocks = Omega_rows[:k*n_out].reshape(k, n_out, r)
+                    block = np.tensordot(past_w, CA_blocks, axes=(0, 0))
+                    Womega[k*n_out:(k+1)*n_out, n_out:] = block
+
+            return Omega_rows, Womega
+
+        # General multi-input path.
+        W_D = np.zeros((n_out * N, n_out * n_in))
+        W_B = np.zeros((n_out * N, r * n_in))
+
+        for k in range(N):
+            row_slice = slice(k * n_out, (k + 1) * n_out)
+            u_k = self.systemInput[:, k].reshape(1, -1)
+
+            W_D[row_slice, :] = np.kron(u_k, np.eye(n_out))
+
+            conv_block = np.zeros((n_out, r * n_in))
+            for i in range(k):
+                u_past = self.systemInput[:, k - 1 - i].reshape(1, -1)
+                conv_block += np.kron(u_past, CA_powers[i])
+
+            W_B[row_slice, :] = conv_block
+
+        Womega = np.hstack((W_D, W_B))
 
         return Omega_rows, Womega
     
-    def build_B_D_X0_matrices(self, A, C):
+    def build_B_D_matrices(self, A, C):
         Omega_rows, Womega = self.buildWeightedObserability(A, C)
+
+        ny = self.numberOfOutputs
+        nx = A.shape[0]
+        nu = self.numberOfInputs
+        n_D = ny * nu
         
-        W_D = Womega[:, :self.numberOfOutputs]
-        W_B = Womega[:, self.numberOfOutputs:]
+        W_D = Womega[:, :n_D]
+        W_B = Womega[:, n_D:]
         
         Y = self.systemOutput.reshape(-1, order="F")
-        Regression_Matrix = np.hstack((Omega_rows, W_D, W_B))
 
+        Regression_Matrix = np.hstack((W_D, W_B))
         theta, _, _, _ = np.linalg.lstsq(Regression_Matrix, Y, rcond=None)
+        D = theta[:n_D].reshape((ny, nu), order='F')
+        B = theta[n_D:].reshape((nx, nu), order='F')
 
-        nx = A.shape[0]          
-        ny = self.numberOfOutputs 
-
-        initialState = theta[:nx].reshape((nx,))
-        D = theta[nx : nx + ny].reshape((ny, 1))
-        B = theta[nx + ny :].reshape((nx, 1))
-
-        return B, D, initialState
+        return B, D
     
     def buildStateSpaceSystem(self):
-        observabilityMatrix, _ = self.buildObservability_and_InitialState()
+        observabilityMatrix, initialState = self.buildObservability_and_InitialState()
         A, C = self.build_A_C_matrices(observabilityMatrix)
-        B, D, initialState = self.build_B_D_X0_matrices(A, C)
+        B, D = self.build_B_D_matrices(A, C)
 
         return A, B, C, D, initialState
     
 
     def evolveInput(self, A, B, C, D, u, x0):
+        u = np.array(u)
+        if u.ndim == 2 and u.shape[0] == B.shape[1] and u.shape[1] != B.shape[1]:
+            # Accept both conventions: (nu, N) and (N, nu).
+            u = u.T
+
         system = (A, B, C, D, 1.0)
         t, y, x = dlsim(system, u, x0=x0)
         

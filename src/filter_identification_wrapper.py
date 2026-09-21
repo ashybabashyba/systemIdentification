@@ -10,9 +10,13 @@ class FilterIdentificationWrapper:
         self.deterministicOutputValues = []
         self.interpolatedDeterministicOutputValues = []
 
+        self.residualValues = []
+        self.interpolatedResidualValues = []
+
         self.inputTimeData  = []
         self.deterministicOutputTimeData = []
         self.referenceOutputTimeData = []
+        self.residualTimeData = []
         
         self.t_training = None
         self.t_control = None
@@ -57,6 +61,18 @@ class FilterIdentificationWrapper:
                 raise ValueError("Output time data must be consistent across calls")
         else:
             self.referenceOutputTimeData = outputTimeData
+
+    def addResidualData(self, residualData, residualTimeData):
+        if len(self.residualValues) == 0:
+            self.residualValues = np.array([residualData])
+        else:
+            self.residualValues = np.vstack((self.residualValues, residualData))
+
+        if len(self.residualTimeData) != 0:
+            if not np.array_equal(self.residualTimeData, residualTimeData):
+                raise ValueError("Residual time data must be consistent across calls")
+        else:
+            self.residualTimeData = residualTimeData
 
     def setTimeWindow(self, t_training, t_control):
         """Set training and control time windows with validation.
@@ -126,5 +142,85 @@ class FilterIdentificationWrapper:
 
     def buildOutputResiduals(self):
         self.buildInterpolatedOutputs()
+        if len(self.residualValues) != 0:
+            k_max = max(self.k_prime, self.k_prime_ctrl)
+            t_common = self.inputTimeData[:k_max + 1]
+
+            residuals = np.array(self.residualValues)
+            if residuals.ndim == 1:
+                residuals = residuals.reshape(-1, 1)
+
+            residual_interp = []
+            for i in range(residuals.shape[0]):
+                residual_interp.append(
+                    np.interp(
+                        t_common,
+                        self.residualTimeData,
+                        residuals[i, :]
+                    )
+                )
+
+            self.interpolatedResidualValues = np.vstack(residual_interp)
+            return self.interpolatedResidualValues
 
         return self.interpolatedReferenceOutputValues - self.interpolatedDeterministicOutputValues
+
+    def buildVicarioPreprocessedYhatAndResiduals(self, u, y, p, rcond=1e-10):
+        """
+        Build y_hat and residuals epsilon using an observer-like regression:
+            y(k) ~= Ybar * v(k)
+        with
+            v(k) = [u(k), u(k-1), ..., u(k-p), y(k-1), ..., y(k-p)]
+
+        Args:
+            u: shape (m, N)
+            y: shape (q, N)
+            p: observer horizon/order
+            rcond: pseudo-inverse cutoff
+
+        Returns:
+            y_hat: shape (q, N)
+            epsilon: shape (q, N)
+            ybar: shape (q, m*(p+1) + q*p)
+        """
+        if u.ndim == 1:
+            u = u.reshape(1, -1)
+        if y.ndim == 1:
+            y = y.reshape(1, -1)
+
+        m, n_u = u.shape
+        q, n_y = y.shape
+        if n_u != n_y:
+            raise ValueError(
+                "Input/output length mismatch in preprocessed stage: "
+                f"{n_u} vs {n_y}"
+            )
+
+        n = n_u
+        if p <= 0 or p >= n:
+            raise ValueError(f"Invalid p={p}. Must satisfy 0 < p < N={n}")
+
+        n_cols = n - p
+        reg_dim = m * (p + 1) + q * p
+
+        v_mat = np.zeros((reg_dim, n_cols))
+        y_mat = np.zeros((q, n_cols))
+
+        for idx, k in enumerate(range(p, n)):
+            u_stack = [u[:, k - j] for j in range(p + 1)]
+            y_stack = [y[:, k - j] for j in range(1, p + 1)]
+
+            v_k = np.concatenate(u_stack + y_stack, axis=0)
+            v_mat[:, idx] = v_k
+            y_mat[:, idx] = y[:, k]
+
+        vv_t = v_mat @ v_mat.T
+        ybar = y_mat @ v_mat.T @ np.linalg.pinv(vv_t, rcond=rcond)
+        y_hat_cols = ybar @ v_mat
+
+        y_hat = np.zeros_like(y)
+        y_hat[:, :p] = y[:, :p]
+        y_hat[:, p:] = y_hat_cols
+
+        epsilon = y - y_hat
+        return y_hat, epsilon, ybar

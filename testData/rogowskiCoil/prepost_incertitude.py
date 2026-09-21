@@ -145,7 +145,7 @@ observer = ObserverKalmanFilterIdentification(
     A=A, B=B, C=C, D=D, 
     initialState=initialState, 
     dataWrapper=data_wrapper,
-    energyThreshold=1-1e-9
+    energy_threshold=1-1e-9
 )
 x_kalman, y_kalman = observer.evolveWithFilter(x_ref=x_id_predicted.T)
 

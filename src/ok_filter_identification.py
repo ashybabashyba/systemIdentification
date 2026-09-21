@@ -3,51 +3,72 @@ from scipy.signal import dlsim
 from numba import njit
 
 class ObserverKalmanFilterIdentification:
-    def __init__(self, A, B, C, D, initialState, dataWrapper, energyThreshold=0.99):
+    def __init__(
+        self,
+        A,
+        B,
+        C,
+        D,
+        initialState,
+        dataWrapper,
+        energy_threshold=1 - 1e-9,
+        observer_activation_ratio=0.1,
+    ):
         self.A_est = A
         self.B_est = B
         self.C_est = C
         self.D_est = D
         self.initialState = initialState
 
-        self.energyThreshold = energyThreshold
+        self.energy_threshold = energy_threshold
+        self.observer_activation_ratio = observer_activation_ratio
 
         self.residuals = dataWrapper.buildOutputResiduals() 
         self.k_prime = dataWrapper.k_prime
         self.k_prime_ctrl = dataWrapper.k_prime_ctrl
         self.inputValues = dataWrapper.inputValues
         self.y_ref_interp = dataWrapper.interpolatedReferenceOutputValues
+
+        self.observerGain = None
+        self.residual_order = None
+        self.observer_enabled = True
+        self.control_residual_ratio = None
+
+    def _computeControlResidualRatio(self):
+        residuals = np.atleast_2d(np.asarray(self.residuals))
+        y_ref = np.atleast_2d(np.asarray(self.y_ref_interp))
+
+        L = min(residuals.shape[1], y_ref.shape[1])
+        if L == 0:
+            return 0.0
+
+        start = max(0, self.k_prime + 1)
+        end = min(self.k_prime_ctrl + 1, L)
+        if end - start < 3:
+            start = 0
+            end = L
+
+        res_rms = np.sqrt(np.mean(residuals[:, start:end] ** 2))
+        ref_rms = np.sqrt(np.mean(y_ref[:, start:end] ** 2))
+        return float(res_rms / (ref_rms + np.finfo(float).eps))
+
+    def cumulativeEnergyTruncation(self, eigenvalues):
+        total = np.sum(eigenvalues**2)
+        if total <= np.finfo(float).eps:
+            return 2
+
+        cumulative_energy = np.cumsum(eigenvalues**2) / total
+        r = np.argmax(cumulative_energy >= self.energy_threshold) + 1
+
+        return max(r, 2)
     
-    def buildCorrelationVector(self):
-        residuals = np.atleast_2d(self.residuals) 
-        n_outputs, L = residuals.shape
+    def buildTruncatedSVD(self, matrix):
+        U, S, Vh = np.linalg.svd(matrix, full_matrices=False)
+        r = self.cumulativeEnergyTruncation(S)
 
-        residuals_norm = residuals - np.mean(residuals, axis=1, keepdims=True)
-
-        rho_total = np.zeros(L)
-
-        for i in range(n_outputs):
-            channel = residuals_norm[i, :]
-            rho_channel = np.correlate(channel, channel, mode='full')
-            
-            rho_total += rho_channel[L-1:]
-
-        rho_normalized = rho_total / rho_total[0]
-
-        return rho_normalized
-
-    def energyCriterionForTruncation(self, order=1):
-        autocorrelationVector = self.buildCorrelationVector()
-        rho_abs = np.abs(autocorrelationVector)
-
-        total_energy = np.sum(rho_abs**order)
-        cumulative_energy = np.cumsum(rho_abs**order) / total_energy
-
-        p = np.where(cumulative_energy >= self.energyThreshold)[0][0]
-
-        return p
+        return U[:, :r], S[:r], Vh[:r, :]
     
-    def buildRegressionMatrix(self, p):
+    def buildRegressionMatrix(self, p, residuals_input=None):
         residuals = self.residuals
         if residuals.ndim == 1:
             residuals = residuals.reshape(1, -1)
@@ -72,24 +93,19 @@ class ObserverKalmanFilterIdentification:
         residuals = self.residuals
         # p = self.energyCriterionForTruncation(residuals)
 
-        if residuals.ndim == 1:
-            residuals = residuals.reshape(1, -1)
         n_outputs, L = residuals.shape
         p = L - 1
 
-        V2 = self.buildRegressionMatrix(p)
+        V2 = self.buildRegressionMatrix(p, residuals)
         y_2 = np.asarray(residuals)
         y_2 = y_2[:, 1:]
 
-        U, S, Vt = np.linalg.svd(V2, full_matrices=False)
+        U, S, Vh = self.buildTruncatedSVD(V2)
 
-        tol = S[0] * self.energyThreshold
-    
-        S_inv = np.zeros_like(S)
-        S_inv[S > tol] = 1.0 / S[S > tol]
+        Sinv = np.zeros_like(S)
+        Sinv = 1.0 / S
 
-        Y_2_bar = -y_2 @ (Vt.T @ np.diag(S_inv) @ U.T)
-        # Y_2_bar = -y_2 @ np.linalg.pinv(V2, rcond=1e-24)
+        Y_2_bar = -y_2 @ (Vh.T @ np.diag(Sinv) @ U.T)
 
         Yo_list = []
         Y_bar_blocks = [Y_2_bar[:, i*n_outputs : (i+1)*n_outputs] for i in range(p)]
@@ -98,7 +114,7 @@ class ObserverKalmanFilterIdentification:
             current_Yo = Y_bar_blocks[k].copy()
             
             for i in range(k):
-                current_Yo += Yo_list[(k-1)-i] @ Y_bar_blocks[i]
+                current_Yo -= Y_bar_blocks[i] @ Yo_list[(k-1)-i]
                 
             Yo_list.append(current_Yo)
 
@@ -115,7 +131,7 @@ class ObserverKalmanFilterIdentification:
         n_outputs, L = residuals.shape
         p = L - 1
 
-        n_outputs = self.C_est.shape[0]
+        # n_outputs = self.C_est.shape[0]
         r = self.A_est.shape[0]
 
         Omega_rows = np.zeros((n_outputs * p, r))
@@ -128,11 +144,25 @@ class ObserverKalmanFilterIdentification:
         return Omega_rows
     
     def buildObserverGain(self):
+        if self.observerGain is not None:
+            return self.observerGain
+
+        self.control_residual_ratio = self._computeControlResidualRatio()
+        if self.control_residual_ratio < self.observer_activation_ratio:
+            self.observer_enabled = False
+            n_states = self.A_est.shape[0]
+            n_outputs = self.C_est.shape[0]
+            self.observerGain = np.zeros((n_states, n_outputs))
+            return self.observerGain
+
+        self.observer_enabled = True
+
         filterObservability = self.buildFilterObservability()
         observabilityMatrix = self.buildObservabilityMatrix()
 
         observerGain = np.linalg.lstsq(observabilityMatrix, filterObservability, rcond=None)[0]
 
+        self.observerGain = observerGain
         return observerGain
     
     def evolveWithFilter(self, x_ref):
@@ -285,26 +315,30 @@ def _compute_uncertainty_worst_case_jit(A_est, C_est, G, k_prime, k_prime_ctrl, 
     Sigma_y_accum = np.zeros((p, p))
     
     V_train = G.copy()
-    G_sum_train = np.zeros((n, m))
+    G_sum_train_abs = np.zeros((n, m))
     
     V_free = G.copy()
-    G_sum_free = np.zeros((n, m))
+    G_sum_free_abs = np.zeros((n, m))
+
+    C_abs = np.abs(C_est)
     
     for k in range(N):
         if k <= k_prime:
-            G_sum_train += V_train
+            # Triangular inequality: |sum_i A^i G| <= sum_i |A^i G|
+            G_sum_train_abs += np.abs(V_train)
             V_train = A_est @ V_train  # O(n^2 * p) -> O(n^3)
             
-            M = C_est @ G_sum_train    
+            M = C_abs @ G_sum_train_abs
             Sigma_y_accum += (M @ M.T) * eps_sq_train
             
             Sigma_y[:, :, k] = Sigma_y_accum + R_train
         else:
-            G_sum_free += V_free
+            # Triangular inequality in control/free region as well.
+            G_sum_free_abs += np.abs(V_free)
             V_free = A_est @ V_free    #  O(n^2 * p)
             
 
-            M = C_est @ G_sum_free     
+            M = C_abs @ G_sum_free_abs
             Sigma_y_accum += (M @ M.T) * eps_sq_free
             
             Sigma_y[:, :, k] = Sigma_y_accum + R_free
