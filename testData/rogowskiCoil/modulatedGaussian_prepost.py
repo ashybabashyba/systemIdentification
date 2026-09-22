@@ -168,6 +168,10 @@ finalInput = np.interp(
     data["input_signal"]
 ).reshape((1, -1))
 
+# x(0) = C^-1 [y(0) - D u(0)]
+initialState_nonModulated = np.linalg.pinv(C_modulated) @ (finalOutput[0][0] - D_modulated * finalInput[0][0])
+initialState_nonModulated = initialState_nonModulated.reshape((-1))
+
 x_id_predicted, y_id_predicted = stateSpace_modulated.evolveInput(A=A_modulated, B=B_modulated, C=C_modulated, D=D_modulated, u=finalInput[0], x0=initialState_modulated)
 
 plt.plot(finalTime, finalOutput[0], label='Original Output on Coil')
