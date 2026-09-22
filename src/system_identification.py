@@ -205,30 +205,54 @@ class StateSpace:
 
         return Omega_rows, Womega
     
+    def build_B_D_X0_matrices(self, A, C):
+        Omega_rows, Womega = self.buildWeightedObserability(A, C)
+        
+        W_D = Womega[:, :self.numberOfOutputs]
+        W_B = Womega[:, self.numberOfOutputs:]
+        
+        Y = self.systemOutput.reshape(-1, order="F")
+        Regression_Matrix = np.hstack((Omega_rows, W_D, W_B))
+
+        theta, _, _, _ = np.linalg.lstsq(Regression_Matrix, Y, rcond=None)
+
+        nx = A.shape[0]          
+        ny = self.numberOfOutputs 
+
+        initialState = theta[:nx].reshape((nx,))
+        D = theta[nx : nx + ny].reshape((ny, 1))
+        B = theta[nx + ny :].reshape((nx, 1))
+
+        return B, D, initialState
+
     def build_B_D_matrices(self, A, C):
         Omega_rows, Womega = self.buildWeightedObserability(A, C)
 
+        Y = self.systemOutput.reshape(-1, order="F")
+        theta, _, _, _ = np.linalg.lstsq(Womega, Y, rcond=None)
+
         ny = self.numberOfOutputs
         nx = A.shape[0]
-        nu = self.numberOfInputs
-        n_D = ny * nu
-        
-        W_D = Womega[:, :n_D]
-        W_B = Womega[:, n_D:]
-        
-        Y = self.systemOutput.reshape(-1, order="F")
 
-        Regression_Matrix = np.hstack((W_D, W_B))
-        theta, _, _, _ = np.linalg.lstsq(Regression_Matrix, Y, rcond=None)
-        D = theta[:n_D].reshape((ny, nu), order='F')
-        B = theta[n_D:].reshape((nx, nu), order='F')
+        D = theta[:ny].reshape((ny, 1))
+        B = theta[ny:].reshape((nx, 1))
 
         return B, D
+
+    def estimate_initial_state(self, A, B, C, D):
+        Omega_rows, Womega = self.buildWeightedObserability(A, C)
+        theta_BD = np.concatenate((D.reshape(-1), B.reshape(-1)))
+        Y = self.systemOutput.reshape(-1, order="F")
+        residual = Y - Womega @ theta_BD
+
+        initialState, _, _, _ = np.linalg.lstsq(Omega_rows, residual, rcond=None)
+        return initialState
     
     def buildStateSpaceSystem(self):
-        observabilityMatrix, initialState = self.buildObservability_and_InitialState()
+        observabilityMatrix, _ = self.buildObservability_and_InitialState()
         A, C = self.build_A_C_matrices(observabilityMatrix)
         B, D = self.build_B_D_matrices(A, C)
+        initialState = self.estimate_initial_state(A, B, C, D)
 
         return A, B, C, D, initialState
     
