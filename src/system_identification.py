@@ -225,10 +225,11 @@ class StateSpace:
 
         return B, D, initialState
 
-    def build_B_D_matrices(self, A, C):
-        Omega_rows, Womega = self.buildWeightedObserability(A, C)
-
+    def build_B_D_matrices(self, A, C, Omega_rows, Womega, initialState=None):
         Y = self.systemOutput.reshape(-1, order="F")
+        if initialState is not None:
+            Y = Y - Omega_rows @ initialState
+
         theta, _, _, _ = np.linalg.lstsq(Womega, Y, rcond=None)
 
         ny = self.numberOfOutputs
@@ -239,20 +240,69 @@ class StateSpace:
 
         return B, D
 
-    def estimate_initial_state(self, A, B, C, D):
-        Omega_rows, Womega = self.buildWeightedObserability(A, C)
+    def estimate_initial_state(self, A, B, C, D, Omega_rows, Womega):
         theta_BD = np.concatenate((D.reshape(-1), B.reshape(-1)))
         Y = self.systemOutput.reshape(-1, order="F")
         residual = Y - Womega @ theta_BD
 
-        initialState, _, _, _ = np.linalg.lstsq(Omega_rows, residual, rcond=None)
+        initialState, _, _, _ = np.linalg.lstsq(
+            Omega_rows,
+            residual,
+            rcond=None
+        )
+
         return initialState
+
+    def compute_reconstruction_error(self, A, C, B, D, initialState, Omega_rows, Womega):
+        theta_BD = np.concatenate((
+            D.reshape(-1),
+            B.reshape(-1)
+        ))
+
+        Y = self.systemOutput.reshape(-1, order="F")
+
+        residual = (
+            Y
+            - Womega @ theta_BD
+            - Omega_rows @ initialState
+        )
+
+        return np.linalg.norm(residual)
     
-    def buildStateSpaceSystem(self):
+    def buildStateSpaceSystem(self, max_iter=10, tol=1e-6):
         observabilityMatrix, _ = self.buildObservability_and_InitialState()
         A, C = self.build_A_C_matrices(observabilityMatrix)
-        B, D = self.build_B_D_matrices(A, C)
-        initialState = self.estimate_initial_state(A, B, C, D)
+        Omega_rows, Womega = self.buildWeightedObserability(A, C)
+
+        initialState = np.zeros(A.shape[0])
+
+        B = None
+        D = None
+
+        previous_cost = np.inf
+
+        for iteration in range(max_iter):
+            B_new, D_new = self.build_B_D_matrices(
+                A, C, Omega_rows, Womega, initialState
+            )
+
+            initialState_new = self.estimate_initial_state(
+                A, B_new, C, D_new, Omega_rows, Womega
+            )
+
+            cost = self.compute_reconstruction_error(
+                A, C, B_new, D_new, initialState_new, Omega_rows, Womega
+            )
+
+            if abs(previous_cost - cost) < tol:
+                B, D = B_new, D_new
+                initialState = initialState_new
+                break
+
+            B = B_new
+            D = D_new
+            initialState = initialState_new
+            previous_cost = cost
 
         return A, B, C, D, initialState
     
