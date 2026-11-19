@@ -1,3 +1,4 @@
+import warnings
 import numpy as np
 from scipy.stats import genpareto
 
@@ -25,8 +26,9 @@ class EVTStatisticalBound:
             raise ValueError("Confidence level must be between 0 and 1.")
 
     def get_pot_threshold(self):
-        u = np.percentile(self.residuals, self.percentile_threshold)
-        exceedances = self.residuals[self.residuals > u]
+        z = np.abs(np.asarray(self.residuals).ravel())
+        u = np.percentile(z, self.percentile_threshold)
+        exceedances = z[z > u] - u
 
         if exceedances.size < 10:
             raise ValueError(
@@ -37,9 +39,18 @@ class EVTStatisticalBound:
         return u, exceedances
 
     def estimate_extremal_index(self, residuals, pot_threshold):
-        # Ferro-Segers estimator for the extremal index
-        # Ferro, C.A.T. and Segers, J. (2003), Inference for clusters of extreme values. Journal of the Royal Statistical Society: Series B 
-        # (Statistical Methodology), 65: 545-556. https://doi.org/10.1111/1467-9868.00401
+        """Estimate the extremal index from Ferro-Segers inter-exceedance times.
+
+        This estimator assumes an approximately stationary series with
+        sufficiently weak dependence and a high threshold that identifies
+        extreme-value clusters. Trends or too few exceedances can make the
+        estimate unreliable.
+
+        Ferro, C.A.T. and Segers, J. (2003), "Inference for clusters of
+        extreme values", Journal of the Royal Statistical Society: Series B
+        (Statistical Methodology), 65: 545-556.
+        https://doi.org/10.1111/1467-9868.00401
+        """
         z = np.abs(np.asarray(residuals).ravel())
         exceedance_idx = np.flatnonzero(z > pot_threshold)
         n_exceedances = len(exceedance_idx)
@@ -90,11 +101,12 @@ class EVTStatisticalBound:
             return u + (sigma / xi) * (q**(-xi) - 1)
 
     def compute_statistical_bound(self):
-        if np.max(self.residuals) <= self.tolerance:
+        z = np.abs(np.asarray(self.residuals).ravel())
+        if np.max(z) <= self.tolerance:
             return np.zeros_like(self.number_of_pending_iterations)
 
         u, exceedances = self.get_pot_threshold()
-        theta = self.estimate_extremal_index(self.residuals, u)
+        theta = self.estimate_extremal_index(z, u)
 
         xi, loc, sigma = genpareto.fit(
             exceedances,
@@ -106,7 +118,7 @@ class EVTStatisticalBound:
                 "The fitted GPD scale parameter sigma is not positive."
             )
 
-        lambda_u = exceedances.size / self.residuals.size
+        lambda_u = exceedances.size / z.size
         q = self.estimate_individual_exceeding_probability(theta, lambda_u)
 
         if np.any(q > 1):
@@ -117,25 +129,49 @@ class EVTStatisticalBound:
 
         B = self.estimate_statistical_bound(q, xi, sigma, u)
 
+        if xi < 0:
+            endpoint = u - sigma / xi
+            largest_control_residual = np.max(z)
+            warnings.warn(
+                f"The fitted GPD has xi={xi:.6g} < 0 and finite endpoint "
+                f"{endpoint:.6g}. The largest absolute control residual is "
+                f"{largest_control_residual:.6g} (endpoint margin "
+                f"{endpoint - largest_control_residual:.6g}); for the "
+                f"requested horizon H={self.number_of_pending_iterations}, "
+                f"Gamma={B:.6g} (endpoint margin {endpoint - B:.6g}). "
+                "As the horizon grows, Gamma approaches this endpoint and "
+                "cannot exceed it.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
         return B
 
     def get_statistical_info(self):
+        z = np.abs(np.asarray(self.residuals).ravel())
         u, exceedances = self.get_pot_threshold()
-        theta = self.estimate_extremal_index(self.residuals, u)
+        theta = self.estimate_extremal_index(z, u)
 
         xi, loc, sigma = genpareto.fit(
             exceedances,
             floc = 0
         )
 
-        lambda_u = exceedances.size / self.residuals.size
+        lambda_u = exceedances.size / z.size
         n_exceedances = exceedances.size
 
-        return {
-            "POT threshold": u,
-            "xi GPD": xi,
-            "sigma GPD": sigma,
+        info = {
+            "u": u,
+            "xi": xi,
+            "sigma": sigma,
             "lambda_u": lambda_u,
             "theta": theta,
             "n_exceedances": n_exceedances,
+            "POT threshold": u,
+            "xi GPD": xi,
+            "sigma GPD": sigma,
         }
+        if xi < 0:
+            info["endpoint"] = u - sigma / xi
+
+        return info
