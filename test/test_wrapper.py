@@ -55,3 +55,14 @@ def test_multiple_input_signals():
 
     assert system.interpolatedInputValues.shape[0] == 2
     assert system.interpolatedInputValues.shape[1] == len(outputTimeVector)
+
+def test_multiple_output_signals_are_stacked():
+    timeVector = np.arange(0, 5, 0.5)
+    system = SystemIdentificationWrapper(timeInput=timeVector, timeOutput=timeVector)
+
+    firstOutput = np.sin(timeVector)
+    secondOutput = np.cos(timeVector)
+    system.addOutputData(firstOutput)
+    system.addOutputData(secondOutput)
+
+    np.testing.assert_allclose(system.outputValues, [firstOutput, secondOutput])
